@@ -69,7 +69,7 @@ export function buildOutreachBody(lead: Lead, settings: ProfileSettings, drawnTo
     [
       greetingFor(lead),
       "",
-      `I hope you're doing well. My name is ${settings.fullName}, and I'm currently a freshman at ${settings.schoolName}. Last summer I interned at two YC companies, DeepAware and Frizzle AI, working on robot teleoperation software and cold outreach campaigns. I was searching for internships this summer and came across ${companyName} in the YC directory, and I'd love to learn more about any opportunities you might offer for students like me.`,
+      `I hope you're doing well. My name is ${settings.fullName}, and I'm currently a freshman at ${settings.schoolName} in ${settings.city}. Last summer I interned at two YC companies, DeepAware AI in San Francisco and Frizzle AI, working on robot teleoperation software and cold outreach campaigns. I was searching for internships this summer and came across ${companyName} in the YC directory, and I'd love to learn more about any opportunities you might offer for students like me.`,
       "",
       `I'm particularly drawn to ${drawnTo}, and I'm eager to gain real-world experience, contribute in any way I can, and continue learning.`,
       "",

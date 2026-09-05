@@ -16,8 +16,8 @@ function assertDraftContract(draft: { subject: string; body: string }) {
   assert.match(draft.subject, /^Interested in Learning More About Internship Opportunities at .+$/);
   assert.match(draft.body, /^Hi\b/);
   // The template, followed exactly.
-  assert.match(draft.body, /I hope you're doing well\. My name is Saarth Ranka, and I'm currently a freshman at Monta Vista High School\./);
-  assert.match(draft.body, /Last summer I interned at two YC companies, DeepAware and Frizzle AI, working on robot teleoperation software and cold outreach campaigns\./);
+  assert.match(draft.body, /I hope you're doing well\. My name is Saarth Ranka, and I'm currently a freshman at Monta Vista High School in Cupertino\./);
+  assert.match(draft.body, /Last summer I interned at two YC companies, DeepAware AI in San Francisco and Frizzle AI, working on robot teleoperation software and cold outreach campaigns\./);
   assert.match(draft.body, /I was searching for internships this summer and came across .+ in the YC directory/);
   assert.match(draft.body, /I'm particularly drawn to .+, and I'm eager to gain real-world experience/);
   assert.match(draft.body, /potential internships, job shadowing, or even volunteer roles/);

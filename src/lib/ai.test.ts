@@ -18,11 +18,18 @@ function assertDraftContract(draft: { subject: string; body: string }) {
   // The template, followed exactly.
   assert.match(draft.body, /I hope you're doing well\. My name is Saarth Ranka, and I'm currently a freshman at Monta Vista High School\./);
   assert.match(draft.body, /Last summer I interned at two YC companies, DeepAware and Frizzle AI, working on robot teleoperation software and cold outreach campaigns\./);
-  assert.match(draft.body, /while researching organizations doing meaningful work in this space/);
+  assert.match(draft.body, /I was searching for internships this summer and came across .+ in the YC directory/);
   assert.match(draft.body, /I'm particularly drawn to .+, and I'm eager to gain real-world experience/);
   assert.match(draft.body, /potential internships, job shadowing, or even volunteer roles/);
   assert.match(draft.body, /Thanks so much for your time/);
   assert.match(draft.body, /Warmly,\nSaarth Ranka/);
+  // Blank lines between paragraphs are what the HTML part turns into <p> blocks.
+  // Without them the whole email renders as one wall of <br>.
+  assert.equal(draft.body.split(/\n\s*\n/).length, 6, "expected 6 paragraph blocks");
+  assert.match(draft.body, /\+1 650 441 7661$/);
+  // The old line claimed every recipient does "meaningful work in this space",
+  // which is nonsense on a list this varied.
+  assert.doesNotMatch(draft.body, /meaningful work in this space/);
   // Not one em dash or en dash anywhere, including in scraped company copy.
   assert.doesNotMatch(draft.body, /[\u2014\u2013]|--/);
   assert.doesNotMatch(draft.body, /Hey there/i);

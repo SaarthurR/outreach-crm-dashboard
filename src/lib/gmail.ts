@@ -27,8 +27,68 @@ function base64UrlEncode(input: string) {
     .replace(/=+$/g, "");
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * A text/plain message renders in Gmail as a narrow fixed-width column with the
+ * sender's own line breaks baked in. Sending multipart/alternative lets the HTML
+ * part reflow to the reader's window, and turns the address and phone number into
+ * real anchors rather than bare text Gmail rewrites through a redirect.
+ */
+function buildHtmlBody(body: string) {
+  const paragraphs = body
+    .split(/\n\s*\n/)
+    .map((block) => {
+      const lines = block.split("\n").map((line) => {
+        const safe = escapeHtml(line);
+        if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(line.trim())) {
+          return `<a href="mailto:${escapeHtml(line.trim())}">${safe}</a>`;
+        }
+        if (/^\+?[\d ()-]{9,}$/.test(line.trim())) {
+          return `<a href="tel:${line.replace(/[^+\d]/g, "")}">${safe}</a>`;
+        }
+        return safe;
+      });
+      return `<p>${lines.join("<br>")}</p>`;
+    })
+    .join("\n");
+
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#202124">\n${paragraphs}\n</div>`;
+}
+
 function buildGmailMessage(to: string, subject: string, body: string) {
-  return base64UrlEncode(`To: ${to}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${body}`);
+  const boundary = `b_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const encodedSubject = `=?utf-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
+
+  const message = [
+    `To: ${to}`,
+    `Subject: ${encodedSubject}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    Buffer.from(body, "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n"),
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=utf-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    Buffer.from(buildHtmlBody(body), "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n"),
+    "",
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+
+  return base64UrlEncode(message);
 }
 
 function parseHeader(headers: { name?: string | null; value?: string | null }[] | undefined, name: string) {
@@ -721,3 +781,6 @@ export async function backfillReplies() {
 
   return { mode: "live" as const, checked, found };
 }
+
+// Exported for tests only: message assembly has no other seam to check it through.
+export const __testables = { buildGmailMessage, buildHtmlBody };

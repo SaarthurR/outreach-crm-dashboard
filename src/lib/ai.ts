@@ -29,6 +29,8 @@ export function outreachSubject(companyName: string) {
 }
 
 // Age comes from the date of birth so the email can never claim the wrong one.
+const CONTACT_PHONE = "+1 650 441 7661";
+
 const BIRTH_DATE = new Date("2012-04-12T00:00:00Z");
 
 export function ageOn(date = new Date()) {
@@ -67,7 +69,7 @@ export function buildOutreachBody(lead: Lead, settings: ProfileSettings, drawnTo
     [
       greetingFor(lead),
       "",
-      `I hope you're doing well. My name is ${settings.fullName}, and I'm currently a freshman at ${settings.schoolName}. Last summer I interned at two YC companies, DeepAware and Frizzle AI, working on robot teleoperation software and cold outreach campaigns. I came across ${companyName} while researching organizations doing meaningful work in this space, and I'd love to learn more about any opportunities you might offer for students like me.`,
+      `I hope you're doing well. My name is ${settings.fullName}, and I'm currently a freshman at ${settings.schoolName}. Last summer I interned at two YC companies, DeepAware and Frizzle AI, working on robot teleoperation software and cold outreach campaigns. I was searching for internships this summer and came across ${companyName} in the YC directory, and I'd love to learn more about any opportunities you might offer for students like me.`,
       "",
       `I'm particularly drawn to ${drawnTo}, and I'm eager to gain real-world experience, contribute in any way I can, and continue learning.`,
       "",
@@ -77,8 +79,13 @@ export function buildOutreachBody(lead: Lead, settings: ProfileSettings, drawnTo
       "",
       "Warmly,",
       settings.fullName,
-      env.authorizedGmailAddress || "",
-    ].filter((line, index, all) => line !== "" || index !== all.length - 1).join("\n"),
+      env.authorizedGmailAddress,
+      CONTACT_PHONE,
+    ]
+      // Drop only a missing sign-off address. The empty strings between paragraphs
+      // are the paragraph breaks, and the HTML part needs them.
+      .filter((line): line is string => Boolean(line) || line === "")
+      .join("\n"),
   );
 }
 

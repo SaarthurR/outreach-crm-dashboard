@@ -1,25 +1,25 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Saarth Ranka</title>
 <style>
-  @page { size: Letter; margin: 0.45in 0.6in; }
+  @page { size: Letter; margin: 0; }
   * { box-sizing: border-box; }
-  body { margin:0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-         font-size: 9.3pt; line-height: 1.34; color:#1a1a1a; }
+  body { margin:0; padding: 0.4in 0.55in; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+         font-size: 9.1pt; line-height: 1.28; color:#1a1a1a; }
   a { color:#1a1a1a; text-decoration:none; }
-  header { border-bottom: 1.5px solid #1a1a1a; padding-bottom: 7px; margin-bottom: 11px; }
-  h1 { font-size: 19pt; letter-spacing: .02em; margin:0 0 3px; font-weight: 700; }
+  header { border-bottom: 1.5px solid #1a1a1a; padding-bottom: 5px; margin-bottom: 9px; }
+  h1 { font-size: 18pt; letter-spacing: .02em; margin:0 0 3px; font-weight: 700; }
   .contact { font-size: 8.8pt; color:#3d3d3d; }
   .contact span { white-space: nowrap; }
   .sep { color:#9a9a9a; padding: 0 6px; }
   h2 { font-size: 8.6pt; text-transform: uppercase; letter-spacing: .11em;
-       margin: 10px 0 5px; padding-bottom: 3px; border-bottom: .8px solid #c4c4c4; font-weight: 700; }
-  .role { display:flex; justify-content:space-between; align-items:baseline; margin-top: 7px; }
+       margin: 8px 0 4px; padding-bottom: 3px; border-bottom: .8px solid #c4c4c4; font-weight: 700; }
+  .role { display:flex; justify-content:space-between; align-items:baseline; margin-top: 6px; }
   .role:first-of-type { margin-top: 0; }
   .who { font-weight: 700; }
   .who em { font-style: normal; font-weight: 400; color:#3d3d3d; }
   .when { font-size: 8.6pt; color:#4a4a4a; white-space: nowrap; padding-left: 10px; }
-  ul { margin: 3px 0 0; padding-left: 15px; }
-  li { margin-bottom: 1.5px; }
+  ul { margin: 2px 0 0; padding-left: 14px; }
+  li { margin-bottom: 1px; }
   .sub { font-size: 8.8pt; color:#4a4a4a; margin: 1px 0 0; }
   .kv { margin: 2px 0 0; }
   .kv b { display:inline-block; min-width: 74px; }
@@ -40,23 +40,21 @@
 
 <div class="role">
   <div class="who">DeepAware AI (Robotics Center of Silicon Valley) <em>&nbsp;· Robotics Intern</em></div>
-  <div class="when">San Francisco, CA · Jun 2026 &ndash; Aug 2026</div>
+  <div class="when">San Francisco, CA · Jun &ndash; Aug 2026</div>
 </div>
 <ul>
-  <li>Built motor control and teleoperation software for the OpenArm robot arms, including simulated arm teleoperation driven from a Meta Quest. Shipped the control repository to clients with an emergency motor-kill hotkey.</li>
-  <li>Built straight-line waypoint navigation for a Unitree Go2-W quadruped after the vendor lidar stack could not self-localize, and delivered the demo solo to a visiting client engineer.</li>
-  <li>Consolidated a fragmented multi-repository codebase into one robot control repo with git submodules, a required-review workflow on main, and a one-command setup script for teammates unfamiliar with git.</li>
-  <li>Ran the robot arm table and presented to roughly 200 people at the company Builders Conference.</li>
+  <li>Built motor control and teleoperation software for the OpenArm robot arms, including simulated teleoperation driven from a Meta Quest, and shipped the control repository to clients with an emergency motor-kill hotkey.</li>
+  <li>Built waypoint navigation for a Unitree Go2-W quadruped after the vendor lidar stack could not self-localize, and delivered the demo solo to a visiting client engineer.</li>
+  <li>Consolidated a fragmented multi-repository codebase into one robot control repo with git submodules and a required-review workflow. Ran the robot arm table and presented to roughly 200 people at the company Builders Conference.</li>
 </ul>
 
 <div class="role">
   <div class="who">Frizzle (Y Combinator S25) <em>&nbsp;· Software Intern</em></div>
-  <div class="when">Remote · May 2026 &ndash; Aug 2026</div>
+  <div class="when">Remote · May &ndash; Aug 2026</div>
 </div>
 <ul>
-  <li>Built WarmStack, the company cold-email infrastructure, covering domains, mailboxes and deliverability at roughly 1,000 emails per day, then ported it into the main product repository.</li>
-  <li>Launched a live outreach campaign for a public school district client. Roughly 600 of 1,091 contacts were emailed within 48 hours, with fixes shipped while it ran.</li>
-  <li>Built a grant scraper and a schools contact scraper deployed on Render, and shipped an AI humanizer with a plagiarism checker as the closing deliverable.</li>
+  <li>Built WarmStack, the company cold-email infrastructure covering domains, mailboxes and deliverability at roughly 1,000 emails per day, then ported it into the main product repository.</li>
+  <li>Launched a live campaign for a public school district client, roughly 600 of 1,091 contacts emailed within 48 hours. Built a grant scraper on Render and shipped an AI humanizer with a plagiarism checker as the closing deliverable.</li>
 </ul>
 
 <h2>Projects</h2>
@@ -67,9 +65,8 @@
 </div>
 <p class="sub">Ride-share app for the Jain Center of Northern California. Supabase, Vercel, web and mobile.</p>
 <ul>
-  <li>Lead developer, and run a six-person volunteer team hired from 10 applicants across 5 defined roles. Wrote the role profiles, ran the interviews, and recruited two board members as advisors.</li>
-  <li>Built driver safety gates, rider live directions with queue-aware ETAs computed against the driver's real pickup order, and a mobile-first admin console.</li>
-  <li>Reviewed a draft liability agreement and identified six substantive defects before it reached counsel. Re-costed the production stack against current vendor pricing, from an assumed $300 per month to $45&ndash;75.</li>
+  <li>Run a six-person volunteer team hired from 10 applicants across 5 defined roles. Wrote the role profiles, ran the interviews, and recruited two board members as advisors.</li>
+  <li>Built driver safety gates, rider live directions with queue-aware ETAs computed against the driver's real pickup order, and a mobile-first admin console. Found six substantive defects in a draft liability agreement before it reached counsel, and re-costed the stack from an assumed $300 per month to $45&ndash;75.</li>
 </ul>
 
 <div class="role">
@@ -77,8 +74,8 @@
   <div class="when">Aug 2026</div>
 </div>
 <ul>
-  <li>Built <b>sgy</b>, a Python command-line Schoology client, after the district declined to issue students an API key. Rejected existing tools on the grounds that the session token is httpOnly, then drove a headless browser profile against the internal JSON endpoints. Found three defects by using it, then generalized it for other districts under an MIT license.</li>
-  <li>Built <b>jv</b>, which maps 537 files of a course site, and <b>bim</b>, which joins posted homework to the correct textbook pages. Built <b>Pace</b> on top of sgy: an assignment feed grouped by urgency and a grades view with weighted categories and inline hypothetical scores. React 19, Vite, Express, deployed on Vercel.</li>
+  <li>Built <b>sgy</b>, a Python command-line Schoology client, after the district declined to issue students an API key. Rejected existing tools because the session token is httpOnly, drove a headless browser profile against the internal JSON endpoints, and generalized it for other districts.</li>
+  <li>Built <b>jv</b> (maps 537 files of a course site) and <b>bim</b> (joins posted homework to the right textbook pages), then <b>Pace</b> on top of sgy: an assignment feed grouped by urgency and a grades view with weighted categories and inline hypothetical scores. React 19, Vite, Express.</li>
 </ul>
 
 <div class="role">
@@ -86,14 +83,16 @@
   <div class="when">Mar 2026 &ndash; Present</div>
 </div>
 <ul>
-  <li>Passed the Topstep evaluation in June 2026 and trade a live funded futures account. Built a mean-reversion system in Python against the Interactive Brokers API, with an eight-phase backtest pipeline, a historical replay harness, and live automation through TradingView webhooks.</li>
+  <li>Passed the Topstep evaluation in June 2026 and trade a live funded futures account. Built a mean-reversion system in Python on the Interactive Brokers API (ib_insync) targeting GBPJPY and EURUSD off a 9:30 AM New York open anchor, with an eight-phase backtest pipeline and live automation through TradingView webhooks.</li>
 </ul>
+
+<p class="sub" style="margin-top:6px"><b>Also built:</b> an internship outreach CRM (React, TypeScript, Node, Gmail API) over roughly 400 companies, with email discovery via DNS MX lookups and pipeline state reconciled live from Gmail. <b>Ascenta</b>, a gated platform with Firebase auth and access-code billing, sold to about 20 paying students. <b>physics7c.vercel.app</b>, a study site on waves, superposition and interference.</p>
 
 <h2>Tools</h2>
 <p class="kv"><b>Languages</b> Python, JavaScript, TypeScript, Java, SQL</p>
-<p class="kv"><b>Web</b> React, Node, Express, Vite, Next.js, Supabase, Vercel, Render</p>
-<p class="kv"><b>Robotics</b> CAN bus, Raspberry Pi, Isaac Sim, Meta Quest, teleoperation</p>
-<p class="kv"><b>Practice</b> Git and submodules, code review workflows, AI-assisted development (Claude Code, Cursor)</p>
+<p class="kv"><b>Stack</b> React, Node, Express, Vite, Next.js, Supabase, Firebase, Vercel, Render, Git</p>
+<p class="kv"><b>Robotics &amp; data</b> CAN bus, Raspberry Pi, Isaac Sim, Meta Quest, Interactive Brokers TWS, TradingView</p>
+<p class="kv"><b>Approach</b> AI-assisted development (Claude Code, Cursor). Owns architecture, product decisions, code review, debugging and deployment.</p>
 
 <h2>Education</h2>
 <div class="role">
@@ -102,11 +101,15 @@
 </div>
 <p class="sub">Accelerated placement in Algebra 2/Trigonometry and Spanish 2. Coursework in Java and Biology.</p>
 
-<h2>Activities</h2>
+<h2>Music and Activities</h2>
+<div class="role">
+  <div class="who">Tabla <em>&nbsp;· Tabla Niketan, Cupertino, under Shri Satishji Tare</em></div>
+  <div class="when">2016 &ndash; Present</div>
+</div>
 <ul>
-  <li><b>Tabla</b>, Indian classical percussion. Preparing for Madhyama Poorna certification, November 2026. People's Choice award at the YJA convention talent show, July 2026.</li>
-  <li><b>Volunteering.</b> Runs a sanctioned President's Volunteer Service Award youth project through the Jain Center of Northern California.</li>
-  <li><b>FIRST LEGO League</b> robotics, Team ShortCircuit, 2020&ndash;2023.</li>
+  <li>Completed Madhyama Pratham on the Sangeet Visarad certification path, preparing for Madhyama Poorna in November 2026. Silver, Cupertino Emerging Artist Award 2025. Most Promising Young Artist, Jain Got Talent (International) 2021. People's Choice, YJA convention talent show 2026.</li>
+  <li>Regular accompanist at the Jain Center of Northern California and Bay Area Vaishnav Parivar, and has taught tabla to children for over five years.</li>
+  <li><b>FIRST LEGO League</b>, Team ShortCircuit #58828, four seasons 2020&ndash;2023, across the hybrid energy, hydroelectric, smart grid and solar farm challenges. Won the local competition, second at the regional championship. Also runs a sanctioned President's Volunteer Service Award youth project through JCNC.</li>
 </ul>
 
 </body></html>

@@ -14,6 +14,8 @@ export type DraftPersonalization = {
   offerLine: string;
   connectionLine: string;
   askLine: string;
+  /** Fills the one blank in the template: "I'm particularly drawn to ___". */
+  drawnTo: string;
   roleDetail: string | null;
   helpAreas: string;
   reason: string;
@@ -451,6 +453,28 @@ export function connectionFor(
   };
 }
 
+// Deterministic fill for "I'm particularly drawn to ___" when no model is available
+// or when the model's clause reads as machine-written.
+export function buildDrawnTo(detail: string | null, lead: Lead) {
+  const clean = (detail ?? "").split(/(?<=[.!?])\s+/).find((part) => {
+    const p = part.toLowerCase();
+    return part.trim().length > 12 && !/^found (in|on)\b/.test(p) && !/^public page:/.test(p);
+  });
+
+  if (clean) {
+    const phrase = clean.replace(/[.!?]+$/, "").trim();
+    const clipped = phrase.length > 90 ? phrase.slice(0, 90).replace(/[\s,;:]+\S*$/, "") : phrase;
+    // Lowercasing the first letter makes it read on from "drawn to", but not when the
+    // first word is an acronym or a brand: "AI for..." must not become "aI for...".
+    const firstWord = clipped.split(/\s+/)[0] ?? "";
+    const keepCase = /^[A-Z]{2,}/.test(firstWord) || /[a-z][A-Z]/.test(firstWord);
+    const lead = keepCase ? clipped : `${clipped.charAt(0).toLowerCase()}${clipped.slice(1)}`;
+    return `what you're building with ${lead}`;
+  }
+
+  return `the problem ${leadCompanyName(lead)} picked to work on`;
+}
+
 // One small, specific ask. Never a list, never "pick your brain".
 export function buildAskLine(detail: string | null, lead: Lead) {
   const signal = [lead.companyType, lead.source, lead.notes, detail].join(" ").toLowerCase();
@@ -511,6 +535,7 @@ export async function buildDraftPersonalization(lead: Lead): Promise<DraftPerson
       offerLine: buildOfferLine(noteRoleDetail, helpAreas),
       connectionLine: buildConnectionLine(leadDetail, lead),
       askLine: buildAskLine(leadDetail, lead),
+      drawnTo: buildDrawnTo(leadDetail, lead),
       roleDetail: noteRoleDetail,
       helpAreas,
       reason: "Used the stored lead notes because they already included a concrete company detail.",
@@ -529,6 +554,7 @@ export async function buildDraftPersonalization(lead: Lead): Promise<DraftPerson
       offerLine: buildOfferLine(roleDetail, helpAreas),
       connectionLine: buildConnectionLine(scrapedDetail, lead),
       askLine: buildAskLine(scrapedDetail, lead),
+      drawnTo: buildDrawnTo(scrapedDetail, lead),
       roleDetail,
       helpAreas,
       reason: roleDetail
@@ -546,6 +572,7 @@ export async function buildDraftPersonalization(lead: Lead): Promise<DraftPerson
     offerLine: buildOfferLine(roleDetail, fallbackHelpAreas),
     connectionLine: buildConnectionLine(null, lead),
     askLine: buildAskLine(null, lead),
+    drawnTo: buildDrawnTo(null, lead),
     roleDetail,
     helpAreas: fallbackHelpAreas,
     reason: roleDetail

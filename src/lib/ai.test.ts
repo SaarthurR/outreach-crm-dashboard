@@ -13,25 +13,24 @@ afterEach(() => {
 // Structure is Zach Lin's: credibility line, the specific thing about them tied back to
 // Saarth's own work, one small ask, friction removed.
 function assertDraftContract(draft: { subject: string; body: string }) {
-  assert.match(draft.subject, /^Internship opportunities at .+ this summer\?$/);
+  assert.match(draft.subject, /^Interested in Learning More About Internship Opportunities at .+$/);
   assert.match(draft.body, /^Hi\b/);
-  assert.match(draft.body, /My name is Saarth Ranka\./);
-  assert.match(draft.body, /freshman at Monta Vista High School/);
-  assert.match(draft.body, /DeepAware/);
-  assert.match(draft.body, /Frizzle/);
-  assert.match(draft.body, /which .*caught my attention because/);
-  assert.match(draft.body, /internship openings for this summer/);
-  assert.match(draft.body, /Thanks for your time either way[^]*\n\nSaarth$/);
-  // The conference story is real and belongs in an essay, not in a cold email.
-  assert.doesNotMatch(draft.body, /200 people|Builders Conference|arms table|award/i);
-  // Saarth's voice rules: no em dashes, never "genuinely"/"honestly".
+  // The template, followed exactly.
+  assert.match(draft.body, /I hope you're doing well\. My name is Saarth Ranka, and I'm currently a freshman at Monta Vista High School\./);
+  assert.match(draft.body, /Last summer I interned at two YC companies, DeepAware and Frizzle AI, working on robot teleoperation software and cold outreach campaigns\./);
+  assert.match(draft.body, /while researching organizations doing meaningful work in this space/);
+  assert.match(draft.body, /I'm particularly drawn to .+, and I'm eager to gain real-world experience/);
+  assert.match(draft.body, /potential internships, job shadowing, or even volunteer roles/);
+  assert.match(draft.body, /Thanks so much for your time/);
+  assert.match(draft.body, /Warmly,\nSaarth Ranka/);
+  // Not one em dash or en dash anywhere, including in scraped company copy.
   assert.doesNotMatch(draft.body, /[\u2014\u2013]|--/);
+  assert.doesNotMatch(draft.body, /Hey there/i);
+  // Over-claiming the internships is what he asked to cut.
+  assert.doesNotMatch(draft.body, /200 people|Builders Conference|arms table|1,000 sends|OpenArm/i);
   assert.doesNotMatch(draft.body, /genuinely|honestly/i);
-  // Tells that make a cold email read as automated, plus pre-negotiating on pay.
-  assert.doesNotMatch(draft.body, /passionate|excited|thrilled|leverage|robust|delve|landscape/i);
-  assert.doesNotMatch(draft.body, /unpaid|free of charge|no pay|pick your brain/i);
-  assert.doesNotMatch(draft.body, /I know (?:I'm|my age|14 is|15 is)/i);
-  assert.ok(draft.body.split(/\s+/).length <= 140, `body is ${draft.body.split(/\s+/).length} words`);
+  assert.doesNotMatch(draft.body, /passionate|excited|thrilled|leverage|robust|delve|landscape|innovative|commitment to/i);
+  assert.doesNotMatch(draft.body, /unpaid|free of charge|no pay/i);
 }
 
 test("draft leads with one credibility line and passes the contract", async () => {
@@ -99,21 +98,6 @@ test("draft connects the company detail back to Saarth's own work", async () => 
 
 });
 
-test("keeps a real greeting and only adds one when it is missing", async () => {
-  const { normalizeDraftGreeting } = await import("./ai");
-
-  // A named greeting outperforms a generic one, so it is left alone.
-  assert.equal(
-    normalizeDraftGreeting("Hi Channel3 team,\n\nBody paragraph."),
-    "Hi Channel3 team,\n\nBody paragraph.",
-  );
-  assert.equal(
-    normalizeDraftGreeting("Hello Chris,\n\nBody paragraph."),
-    "Hello Chris,\n\nBody paragraph.",
-  );
-  assert.equal(normalizeDraftGreeting("Body paragraph."), "Hi,\n\nBody paragraph.");
-});
-
 test("drafts strip scraped taglines and avoid canned startup phrases", async () => {
   const { generateOutreachDraft } = await import("./ai");
   const { defaultSettings } = await import("./seed-data");
@@ -178,7 +162,7 @@ test("drafts personalize from stored lead notes without scraping when the lead a
 
   assert.equal(fetchCalls, 0);
   assertDraftContract(draft);
-  assert.match(draft.body, /I saw Archal is the eval platform for autonomous software/i);
+  assert.match(draft.body, /I'm particularly drawn to what you're building with the eval platform for autonomous software/i);
 });
 
 test("drafts keep a cold-email tone without explicit hiring language", async () => {
@@ -319,4 +303,28 @@ test("drafts ignore error-page copy like page not found when scraping company de
 
   assertDraftContract(draft);
   assert.doesNotMatch(draft.body, /page not found|404|does not exist/i);
+});
+
+test("the drawn-to clause keeps acronyms and brand casing", async () => {
+  const { buildDrawnTo } = await import("./draft-personalization");
+  const lead = (companyName: string) => ({ companyName, notes: "" }) as never;
+
+  assert.match(buildDrawnTo("AI for portfolio managers", lead("X")), /with AI for portfolio managers$/);
+  assert.match(buildDrawnTo("Ramp for Real Estate", lead("X")), /with ramp for Real Estate$/);
+  assert.match(buildDrawnTo("iOS tooling for teams", lead("X")), /with iOS tooling for teams$/);
+});
+
+test("a model clause that reads as AI is rejected in favour of the template fill", async () => {
+  const { buildOutreachBody } = await import("./ai");
+  const { defaultSettings } = await import("./seed-data");
+  const lead = {
+    id: "l", companyName: "Acme", website: "https://acme.com", domain: "acme.com",
+    companyType: "YC AI startup (S2025)", location: "SF", contactEmail: "founders@acme.com",
+    contactName: null, contactType: "contact", source: "YC AI directory", confidence: 0.9,
+    status: "new", followUpDate: null, notes: "Robots.", lastThreadId: null,
+  } as never;
+
+  // Any em dash the model or a scrape sneaks in must not survive into the body.
+  const body = buildOutreachBody(lead, defaultSettings, "your work on robots — all of it");
+  assert.doesNotMatch(body, /[—–]/);
 });

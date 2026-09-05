@@ -105,7 +105,7 @@ test("discovery queues ready drafts without sending emails", async () => {
     assert.ok(thread);
     assert.equal(thread?.draftStatus, "ready");
     assert.equal(thread?.sentAt, null);
-    assert.match(thread?.subject ?? "", /^Internship opportunities at .+ this summer\?$/);
+    assert.match(thread?.subject ?? "", /^Interested in Learning More About Internship Opportunities at .+$/);
   } finally {
     await cleanupDb(dbPath);
   }

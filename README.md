@@ -7,7 +7,12 @@ Built with **Next.js (App Router)**, **Drizzle ORM** over **libSQL/SQLite**, the
 ## Features
 
 - **Lead discovery** — scrapes company directories and the web to find contact emails, deduped into a working queue.
-- **AI-personalized drafts** — generates a tailored email per lead (OpenAI `gpt-4o`, falling back to Groq `llama-3.3-70b`, then to static templates). Multi-pass website scraping enriches each draft with company-specific context.
+- **One fixed email template** — the body is not written by a model. `buildOutreachBody` in
+  `src/lib/ai.ts` holds the exact wording; the model fills a single blank, the clause after
+  "I'm particularly drawn to". If that clause comes back containing anything on the banned-word
+  list (`AI_TELLS`), an em dash, or more than 32 words, it is discarded and a deterministic fill
+  from the company's own description is used instead. Em dashes are stripped from the finished
+  body unconditionally, including out of scraped copy.
 - **Gmail-backed sending** — sends through your own Gmail account with OAuth, restricted to a single authorized address.
 - **Reply tracking** — Gmail history sync plus a Google Pub/Sub push webhook classify incoming replies and update thread state.
 - **Unsent / Sent queues** — mass-send eligible rows under review, with a full sent history.

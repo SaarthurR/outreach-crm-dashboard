@@ -4,6 +4,7 @@ import { groq } from "@ai-sdk/groq";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
+import { leadCompanyName } from "@/lib/company-name";
 import { buildDraftPersonalization } from "@/lib/draft-personalization";
 import { getVipContext } from "@/lib/vip-context";
 import { env, isAiConfigured } from "@/lib/env";
@@ -21,15 +22,12 @@ const replyOutputSchema = z.object({
 
 // The subject line is the single biggest lever on open rate. "Internship Inquiry"
 // reads as mass mail; this one is specific and survives the inbox preview.
-// Named after the company so it does not read as a blast, and it says what it is.
+// The template Saarth chose, followed exactly. Only two things vary per company:
+// its name, and the one sentence saying what specifically drew him to it.
 export function outreachSubject(companyName: string) {
-  return `Internship opportunities at ${companyName} this summer?`;
+  return `Interested in Learning More About Internship Opportunities at ${companyName}`;
 }
 
-// The one paragraph that changed between the 2026 round and this one. Everything
-// else in a cold email is framing; this is the evidence.
-// One line, not a paragraph. It has to establish he is worth reading and then get
-// out of the way, because the next line is the one that earns the reply.
 // Age comes from the date of birth so the email can never claim the wrong one.
 const BIRTH_DATE = new Date("2012-04-12T00:00:00Z");
 
@@ -42,96 +40,55 @@ export function ageOn(date = new Date()) {
   return age;
 }
 
-function credibilityLine(settings: ProfileSettings) {
-  return [
-    `My name is ${settings.fullName}. I'm ${ageOn()} and a freshman at ${settings.schoolName} in ${settings.city}.`,
-    "This summer I wrote control software for the robot arms at DeepAware AI in SF, and built the cold email infrastructure at Frizzle (YC S25).",
-  ].join(" ");
-}
-
-// The direct ask, with a smaller version of itself attached so a "no" on the full
-// internship does not end the thread.
-const INTERNSHIP_ASK =
-  "I wanted to ask if you have any internship openings for this summer, or something smaller to start, like a trial project. Happy to take one task first so you can see the work.";
-
 // contactName is often a role ("Founding team", "Support"), not a person. Greeting a
 // company with "Hi Founding," is worse than not using a name at all.
-const NON_PERSON_CONTACT = /^(founding|founders?|team|support|contact|info|hello|sales|careers|hiring|admin|recruiting|press|the)\b/i;
+const NON_PERSON_CONTACT =
+  /^(founding|founders?|team|support|contact|info|hello|sales|careers|hiring|admin|recruiting|press|the)\b/i;
 
 function greetingFor(lead: Lead) {
   const first = lead.contactName?.trim().split(/\s+/)[0] ?? null;
-  return first && !NON_PERSON_CONTACT.test(first) ? `Hi ${first},` : "Hi,";
+  return first && !NON_PERSON_CONTACT.test(first) ? `Hi ${first},` : "Hi there,";
 }
 
-export function normalizeDraftGreeting(body: string) {
-  const normalizedBody = body.replace(/\r\n/g, "\n").trim();
-
-  if (!normalizedBody) {
-    return "Hi,";
-  }
-
-  const lines = normalizedBody.split("\n");
-
-  if (/^(?:hi|hello|hey|dear)\b/i.test(lines[0] ?? "")) {
-    return lines.join("\n");
-  }
-
-  return ["Hi,", "", normalizedBody].join("\n");
-}
-
-function normalizeDraftPunctuation(body: string) {
-  // Saarth's voice rules ban em dashes. Scraped copy contains them without
-  // surrounding spaces, so match the dash itself, not a spaced-out version of it.
-  return body
-    .replace(/\s*(?:--|—|–)\s*/g, ", ")
+// Every em dash and en dash out, in the body and in anything scraped into it.
+// Saarth's voice rules ban them outright.
+function stripDashes(text: string) {
+  return text
+    .replace(/\s*(?:--|\u2014|\u2013)\s*/g, ", ")
     .replace(/,\s*,/g, ",")
-    .replace(/\s+,/g, ",");
+    .replace(/\s+,/g, ",")
+    .replace(/,(\s*[.!?])/g, "$1");
 }
 
-function joinDraftLines(lines: Array<string | null | undefined>) {
-  return lines.filter((line): line is string => line !== null && line !== undefined).join("\n");
-}
-
-async function buildTemplate(lead: Lead, settings: ProfileSettings) {
-  const personalization = await buildDraftPersonalization(lead);
-  const firstName = settings.firstName || settings.fullName;
-  const observation = personalization.detail
-    ? `I saw ${personalization.companyName} is ${clipDetail(personalization.detail)}`
-    : `I found ${personalization.companyName} through YC`;
-
-  return {
-    body: joinDraftLines([
+/** The fixed body. `drawnTo` is the only sentence that changes per company. */
+export function buildOutreachBody(lead: Lead, settings: ProfileSettings, drawnTo: string) {
+  const companyName = leadCompanyName(lead);
+  return stripDashes(
+    [
       greetingFor(lead),
       "",
-      credibilityLine(settings),
+      `I hope you're doing well. My name is ${settings.fullName}, and I'm currently a freshman at ${settings.schoolName}. Last summer I interned at two YC companies, DeepAware and Frizzle AI, working on robot teleoperation software and cold outreach campaigns. I came across ${companyName} while researching organizations doing meaningful work in this space, and I'd love to learn more about any opportunities you might offer for students like me.`,
       "",
-      `${observation}, which ${personalization.connectionLine}.`,
+      `I'm particularly drawn to ${drawnTo}, and I'm eager to gain real-world experience, contribute in any way I can, and continue learning.`,
       "",
-      INTERNSHIP_ASK,
+      "If you're able to share anything about potential internships, job shadowing, or even volunteer roles, including what the process looks like and what you typically look for, I'd be really grateful.",
       "",
-      "Thanks for your time either way, and I can work around your schedule.",
+      "Thanks so much for your time, and I'd appreciate the chance to connect or hear from you if possible.",
       "",
-      firstName,
-    ]),
-    personalization,
-  };
-}
-
-function clipDetail(value: string) {
-  const firstClause = (value.split(/(?<=[.!?])\s+/)[0] ?? value).replace(/[.!?]+$/, "").trim();
-  const clipped =
-    firstClause.length > 70 ? firstClause.slice(0, 70).replace(/[\s,;:]+\S*$/, "") : firstClause;
-  return /^[A-Z]{2,}/.test(clipped) ? clipped : clipped.charAt(0).toLowerCase() + clipped.slice(1);
+      "Warmly,",
+      settings.fullName,
+      env.authorizedGmailAddress || "",
+    ].filter((line, index, all) => line !== "" || index !== all.length - 1).join("\n"),
+  );
 }
 
 async function fallbackDraft(lead: Lead, settings: ProfileSettings) {
-  const template = await buildTemplate(lead, settings);
-  const personalization = template.personalization.reason;
+  const personalization = await buildDraftPersonalization(lead);
 
   return {
-    subject: outreachSubject(lead.companyName),
-    body: normalizeDraftPunctuation(normalizeDraftGreeting(template.body)),
-    personalization,
+    subject: outreachSubject(leadCompanyName(lead)),
+    body: buildOutreachBody(lead, settings, personalization.drawnTo),
+    personalization: personalization.reason,
     followUpNote: `Follow up around ${addDays(new Date(), settings.followUpWindowDays).toDateString()}.`,
   };
 }
@@ -174,6 +131,33 @@ function fallbackClassification(replyText: string): {
   };
 }
 
+// Saarth's banned-word list, verbatim from 00_Resources/response-shape.md, plus the
+// stock cold-email tells. The model never writes the email, only one clause of it,
+// and anything on this list sends that clause back to the deterministic fallback.
+const AI_TELLS = [
+  "additionally","alternatively","amongst","arguably","as a professional","bridging","bustling",
+  "compelling","consequently","crucial","cutting-edge","daunting","delve","dilemma","dive into",
+  "elevate","embark","emphasize","ensure","essentially","ever-evolving","evolving","excels",
+  "foster","furthermore","game-changing","groundbreaking","harness","immense","in the realm",
+  "in today's","indelible","innovative","intricate","journey","keen","landscape","leverage",
+  "meticulous","moreover","navigating","nestled","orchestrate","paramount","passionate","pivotal",
+  "profoundly","realm","relentless","reshape","revolutionize","robust","seamless","seismic",
+  "showcase","spearhead","subsequently","synergy","tapestry","testament","thrilled","transformative",
+  "ultimately","underscore","unleash","unlock","unprecedented","unveil","vibrant","vital",
+  "excited","exciting","impressive","mission","cutting edge","commitment to","dedication to",
+];
+
+function readsAsAi(text: string) {
+  const lower = text.toLowerCase();
+  return (
+    AI_TELLS.some((word) => lower.includes(word)) ||
+    /[\u2014\u2013]/.test(text) ||
+    text.split(/\s+/).length > 32 ||
+    /^i(?:'m| am)\b/i.test(text.trim()) ||
+    /\.\s/.test(text.trim())
+  );
+}
+
 export async function generateOutreachDraft(lead: Lead, settings: ProfileSettings) {
   if (!isGroqConfigured() && !isAiConfigured()) {
     return fallbackDraft(lead, settings);
@@ -183,77 +167,59 @@ export async function generateOutreachDraft(lead: Lead, settings: ProfileSetting
   const vip = getVipContext(lead.domain);
 
   const companyContext = [
-    `Company: ${personalization.companyName}`,
-    vip
-      ? `What they do: ${vip.whatTheyDo}`
-      : personalization.detail
-        ? `What they do: ${personalization.detail}`
-        : null,
-    personalization.roleDetail ? `Open roles / team focus: ${personalization.roleDetail}` : null,
-    lead.contactName ? `Contact name: ${lead.contactName}` : null,
+    `Company: ${leadCompanyName(lead)}`,
+    `Website: ${lead.website}`,
+    vip ? `What they do: ${vip.whatTheyDo}` : personalization.detail ? `What they do: ${personalization.detail}` : null,
+    personalization.roleDetail ? `Team focus: ${personalization.roleDetail}` : null,
     `How found: ${lead.source}`,
-    vip ? `Saarth's direct connection: ${vip.saarthConnection}` : null,
-    vip ? `Specific things he finds interesting: ${vip.specificInterest}` : null,
+    vip ? `Specific things Saarth finds interesting: ${vip.specificInterest}` : null,
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
 
-  const accomplishments = settings.accomplishments.slice(0, 4).join("\n- ");
+  const prompt = `Fill in ONE blank in a fixed email template. Output that clause only.
 
-  const firstName = settings.firstName || settings.fullName;
-  const contactFirst = lead.contactName ? lead.contactName.split(" ")[0] : null;
-  const greeting = contactFirst ? `Hi ${contactFirst} -` : "Hey there -";
+The sentence it drops into, exactly:
+"I'm particularly drawn to ____, and I'm eager to gain real-world experience, contribute in any way I can, and continue learning."
 
-  const prompt = `Write a cold email from ${settings.fullName}, ${ageOn()}, a freshman at ${settings.schoolName} in ${settings.city}, asking about a summer internship.
-
-HARD LIMIT: 120 words in the body. Five short paragraphs.
-
-STRUCTURE, in this order, blank line between each:
-
-1. "${greeting}"
-
-2. Who he is, two sentences: "My name is ${settings.fullName}. I'm ${ageOn()} and a freshman at ${settings.schoolName} in ${settings.city}." Then the two internships below, one clause each. Do not expand them. Never mention the conference, the 200 people, or any award. It makes the email about him instead of them.
-
-3. The paragraph that earns the reply. Name ONE specific thing this company or person did, from the context below. Not their category, not their tagline, not their job title, and not something true of every company in their space. Then say why it caught his attention, tied to a real thread back to his own work, and end on the part he does not know yet. A real open question beats a compliment.
-
-4. The ask, direct: whether they have internship openings for this summer, or something smaller to start such as a trial project. Then offer to take one concrete task first so they can see the work. Do not mention pay in any direction.
-
-5. "Thanks for your time either way, and happy to work around your schedule."
-
-6. "${firstName}"
-
-WHAT HE ACTUALLY DID (never invent anything outside this list):
-- DeepAware AI, San Francisco, summer 2026, in person. Control software, motors and assembly for their OpenArm robot arms.
-- Frizzle (YC S25), summer 2026, remote. Built their cold email infrastructure, about 1,000 sends a day.
-- Solo, AI assisted: three command line tools for his school, a grades dashboard his classmates use, a ride app he runs a six person team on. Trades futures with his own strategies.
-${accomplishments ? `- Older: ${accomplishments}` : ""}
+The writer is ${settings.fullName}, a ${ageOn()} year old high school freshman.
 
 COMPANY:
 ${companyContext}
 
-BANNED, these are what make an email look automated:
-- em dashes. Use commas, periods or parentheses.
-- passionate, excited, thrilled, opportunity to, leverage, robust, journey, delve, landscape, reach out, hope this finds you well, pick your brain, I know I'm young, I know my age makes this unusual, unpaid, free
-- apologising for his age. State it once as a fact and move on.
-- flattery true of any company ("love what you're building").
-- more than one ask.
-- links, attachments, bullet lists, a P.S., a "Best," before the name.
+Write the blank so it names something SPECIFIC about this company: what they actually
+build, a real problem they are solving, or a concrete result. Use what you already know
+about this company if you know it. If the context is too thin to say anything specific,
+write what they build in plain words instead of guessing at a detail.
 
-STYLE: short sentences, plain words, first person, sounds like a person typing quickly and carefully. Warm at the close, not cold. Output the email body only, no subject line, no commentary.`;
+RULES:
+- Under 25 words. One clause. No full sentence, no period at the end.
+- It must read on naturally from "I'm particularly drawn to".
+- Plain words a 14 year old would actually say out loud.
+- NEVER use any of these, they are the words that make writing sound like a chatbot:
+  ${AI_TELLS.join(", ")}
+- No em dashes or en dashes. No quotes. No company tagline copied word for word.
+- No flattery that would be true of any company ("the great work you're doing").
+- Do not mention his age, his internships, or ask for anything. That is elsewhere in the email.
+
+Good: "how you're getting language models to run on a phone without draining the battery"
+Bad: "your innovative approach to on-device AI and your commitment to excellence"
+
+Output the clause only, nothing else.`;
 
   try {
-    const model = isAiConfigured()
-      ? openai("gpt-4o")
-      : groq("llama-3.3-70b-versatile");
-
+    const model = isAiConfigured() ? openai("gpt-4o") : groq("llama-3.3-70b-versatile");
     const { text } = await generateText({ model, prompt });
+    const clause = text.trim().replace(/^["']|["'.]+$/g, "").trim();
 
-    const cleaned = normalizeDraftPunctuation(normalizeDraftGreeting(text.trim()));
+    if (!clause || readsAsAi(clause)) {
+      return fallbackDraft(lead, settings);
+    }
 
     return {
-      subject: outreachSubject(lead.companyName),
-      body: cleaned,
-      personalization: `AI-generated (${isAiConfigured() ? "gpt-4o" : "groq/llama-3.3-70b"}). ${personalization.reason}`,
+      subject: outreachSubject(leadCompanyName(lead)),
+      body: buildOutreachBody(lead, settings, clause),
+      personalization: `Blank filled by ${isAiConfigured() ? "gpt-4o" : "groq/llama-3.3-70b"}. ${personalization.reason}`,
       followUpNote: `Follow up around ${addDays(new Date(), settings.followUpWindowDays).toDateString()}.`,
     };
   } catch {

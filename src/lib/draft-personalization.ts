@@ -64,7 +64,13 @@ function cleanDetailCandidate(value: string) {
 }
 
 function toNaturalPhrase(value: string) {
-  return value
+  // Scraped marketing copy arrives as several taglines glued together. Only the
+  // first clause is safe to quote back at a founder; the rest reads as machine output.
+  const firstClause = value.split(/(?<=[.!?])\s+/)[0] ?? value;
+  const clipped = firstClause.length > 120 ? `${firstClause.slice(0, 120).replace(/[\s,;:]+\S*$/, "")}` : firstClause;
+
+  return clipped
+    .replace(/[.!?]+$/, "")
     .split(/\s+/)
     .map((word) => {
       if (!word) {
@@ -346,19 +352,29 @@ function buildIntroLine(lead: Lead, detail: string | null, detailKind: Personali
 function buildHelpAreas(detail: string | null, lead: Lead) {
   const signal = [lead.companyType, lead.source, lead.notes, detail].join(" ").toLowerCase();
 
-  if (/(eval|qa|test|agent|automation|workflow|api|infra|developer|tool|platform|robot|model)/.test(signal)) {
-    return "testing edge cases, QA, docs, research, or small automation work";
+  // One offer, not a list. A list reads as "I will do anything", which is what
+  // every other cold email says, and it gives the reader nothing to say yes to.
+  if (/(robot|hardware|motor|arm|actuator|drone|firmware)/.test(signal)) {
+    return "bring-up and testing on the hardware side";
   }
 
-  if (/(design|react|product|customer|website visitors|outbound|support|consumer|video|audio|speech|translation|game|shopping)/.test(signal)) {
-    return "testing product flows, user feedback, docs, or support";
+  if (/(outbound|email|sales|crm|lead|growth|marketing)/.test(signal)) {
+    return "your outbound email setup, which is the thing I did at Frizzle";
   }
 
-  if (/(portfolio|capital|real estate|trading|hedge|research|banking|finance)/.test(signal)) {
-    return "testing product flows, research, docs, or careful QA";
+  if (/(eval|qa|test|agent|automation|workflow|api|infra|developer|tool|platform|model)/.test(signal)) {
+    return "grinding through evals and edge cases nobody has time for";
   }
 
-  return "testing, research, docs, support, or simple web tasks";
+  if (/(design|react|product|customer|consumer|video|audio|speech|translation|game|shopping)/.test(signal)) {
+    return "testing product flows and writing up what breaks";
+  }
+
+  if (/(portfolio|capital|real estate|trading|hedge|banking|finance)/.test(signal)) {
+    return "backtesting and data cleanup, which is close to what I do for my own trading";
+  }
+
+  return "the small unglamorous work that gets pushed to next sprint";
 }
 
 function roleFocusPhrase(roleDetail: string | null) {
@@ -385,10 +401,10 @@ function roleFocusPhrase(roleDetail: string | null) {
 
 function buildOfferLine(roleDetail: string | null, helpAreas: string) {
   if (roleDetail) {
-    return `From what I could tell on your site, ${roleFocusPhrase(roleDetail)} seem to matter to the team — I think I could help with ${helpAreas}.`;
+    return `Your site suggests ${roleFocusPhrase(roleDetail)} matters to the team right now. I could help with ${helpAreas}.`;
   }
 
-  return `I think I could help with ${helpAreas}.`;
+  return `I could help with ${helpAreas}.`;
 }
 
 export async function buildDraftPersonalization(lead: Lead): Promise<DraftPersonalization> {

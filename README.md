@@ -11,6 +11,7 @@ Built with **Next.js (App Router)**, **Drizzle ORM** over **libSQL/SQLite**, the
 - **Gmail-backed sending** — sends through your own Gmail account with OAuth, restricted to a single authorized address.
 - **Reply tracking** — Gmail history sync plus a Google Pub/Sub push webhook classify incoming replies and update thread state.
 - **Unsent / Sent queues** — mass-send eligible rows under review, with a full sent history.
+- **Daily send cap + pacing** — batch sends stop at `dailySendTarget` and space each message out, so a personal Gmail account does not get spam-filtered for firing a burst.
 - **Per-lead opt-out** — blocked companies stay visible but darkened and are skipped on send.
 - **Editable sender profile** — the background used to personalize drafts is configurable in-app.
 
@@ -27,6 +28,17 @@ Single-page dashboard (`src/app/page.tsx` → `src/components/dashboard/`) backe
 | Discovery | `src/lib/discovery.ts` — directory + web scraping for contact emails |
 | Send orchestration | `src/lib/outreach.ts` — draft → send → thread upsert → activity log |
 
+### Sending limits
+
+`sendOutreachBatch` in `src/lib/gmail.ts` enforces two things that the earlier version did not:
+
+- **A daily cap.** `dailySendTarget` from profile settings is counted against messages already
+  sent today. Anything over the cap is skipped with a reason, and stays queued for tomorrow.
+- **A gap between sends.** Each message waits 8 to 20 seconds after the previous one.
+
+This exists because the April/May 2026 campaign sent 167, 250 and 189 emails on single days
+from a personal Gmail address, which is well past the point where Gmail starts filtering.
+
 **Demo vs. live mode** is controlled by `isLiveGmailConfigured()` in `src/lib/env.ts`. Without Google env vars the app runs on seeded demo data and makes no real Gmail calls; every mutation route is a no-op guard in demo mode.
 
 ## Getting started
@@ -34,6 +46,17 @@ Single-page dashboard (`src/app/page.tsx` → `src/components/dashboard/`) backe
 ```bash
 npm install
 npm run dev          # http://localhost:3000 (demo mode)
+```
+
+Demo mode needs no credentials at all. Leads, drafts and sends are simulated against
+seeded data, and no email leaves the machine. That is the mode to use for a first look.
+
+**If `npm run dev` or `npm run build` fails with `library load disallowed by system policy`:**
+macOS quarantined the files (this happens when the folder arrives over AirDrop or a shared
+folder). Next.js then cannot load its native binary and Turbopack refuses to start. Fix it once:
+
+```bash
+xattr -d -r com.apple.quarantine .
 ```
 
 Copy `.env.example` to `.env.local` and fill in credentials to enable live mode:

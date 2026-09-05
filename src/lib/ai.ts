@@ -21,11 +21,28 @@ const replyOutputSchema = z.object({
 
 type DraftTemplateVariant = "technical" | "general";
 
+// The subject line is the single biggest lever on open rate. "Internship Inquiry"
+// reads as mass mail; this one is specific and survives the inbox preview.
+export const OUTREACH_SUBJECT = "intern next summer? (14, shipped at 2 startups)";
+
+// The one paragraph that changed between the 2026 round and this one. Everything
+// else in a cold email is framing; this is the evidence.
+const CREDIBILITY_LINE =
+  "I spent this summer at two startups. At DeepAware AI in SF I worked on the motors, assembly and control software for their OpenArm robot arms, and ran the arms table at their conference in front of about 200 people. At Frizzle (YC S25) I built the cold email infrastructure they ran at around 1,000 sends a day.";
+
+const SOLO_WORK_LINE =
+  "On my own I ship with AI tools. Two school CLIs, a Schoology dashboard, and a ride app I run a six person team on.";
+
+function greetingFor(lead: Lead) {
+  const first = lead.contactName ? lead.contactName.split(" ")[0] : null;
+  return first ? `Hi ${first},` : "Hi,";
+}
+
 export function normalizeDraftGreeting(body: string) {
   const normalizedBody = body.replace(/\r\n/g, "\n").trim();
 
   if (!normalizedBody) {
-    return "Hey there,";
+    return "Hi,";
   }
 
   const lines = normalizedBody.split("\n");
@@ -34,11 +51,16 @@ export function normalizeDraftGreeting(body: string) {
     return lines.join("\n");
   }
 
-  return ["Hey there,", "", normalizedBody].join("\n");
+  return ["Hi,", "", normalizedBody].join("\n");
 }
 
 function normalizeDraftPunctuation(body: string) {
-  return body.replace(/\s+(?:--|—|–)\s+/g, ", ");
+  // Saarth's voice rules ban em dashes. Scraped copy contains them without
+  // surrounding spaces, so match the dash itself, not a spaced-out version of it.
+  return body
+    .replace(/\s*(?:--|—|–)\s*/g, ", ")
+    .replace(/,\s*,/g, ",")
+    .replace(/\s+,/g, ",");
 }
 
 function chooseTemplateVariant(lead: Lead): DraftTemplateVariant {
@@ -62,19 +84,20 @@ function joinDraftLines(lines: Array<string | null | undefined>) {
 async function buildTechnicalTemplate(lead: Lead, settings: ProfileSettings) {
   const personalization = await buildDraftPersonalization(lead);
   const firstName = settings.firstName || settings.fullName;
-  const contextLine = personalization.introLine ?? `I came across ${personalization.companyName} and wanted to reach out.`;
+  const contextLine =
+    personalization.introLine ?? `I came across ${personalization.companyName} and wanted to write.`;
 
   return {
     body: joinDraftLines([
-      `Hey there -\n\nI'm ${settings.fullName}, 14, from ${settings.city}. ${contextLine}`,
+      `${greetingFor(lead)}\n\nI'm ${settings.fullName}, 14, from ${settings.city}. ${contextLine}`,
       "",
-      "I shipped a gaming/proxy site using AI tools — around 20 paying customers. I also use AI to design and ship trading tools with Pine Script and the IBKR API.",
+      CREDIBILITY_LINE,
       "",
       personalization.offerLine,
       "",
-      "I'd love to intern here. Unpaid is fine with me. Happy to start with one concrete task.",
+      "I'd like to do a summer internship with you next year.",
       "",
-      "Would you be open to a 15-minute call?",
+      "Can I send you the two things I shipped?",
       "",
       "Best,",
       firstName,
@@ -86,19 +109,22 @@ async function buildTechnicalTemplate(lead: Lead, settings: ProfileSettings) {
 async function buildGeneralTemplate(lead: Lead, settings: ProfileSettings) {
   const personalization = await buildDraftPersonalization(lead);
   const firstName = settings.firstName || settings.fullName;
-  const contextLine = personalization.introLine ?? `I came across ${personalization.companyName} and wanted to reach out.`;
+  const contextLine =
+    personalization.introLine ?? `I came across ${personalization.companyName} and wanted to write.`;
 
   return {
     body: joinDraftLines([
-      `Hey there -\n\nI'm ${settings.fullName}, 14, from ${settings.city}. ${contextLine}`,
+      `${greetingFor(lead)}\n\nI'm ${settings.fullName}, 14, from ${settings.city}. ${contextLine}`,
       "",
-      "Quick background: I shipped a small gaming/proxy site using AI tools with about 20 customers, and I use AI to design and ship projects around trading and automation. Outside tech, I've played tabla for nine years, teach locally, and placed second nationally at Chaitradhun.",
+      CREDIBILITY_LINE,
+      "",
+      SOLO_WORK_LINE,
       "",
       personalization.offerLine,
       "",
-      "I'd love to intern here. Unpaid is fine with me. Happy to start with one concrete task.",
+      "I'd like to do a summer internship with you next year.",
       "",
-      "Would you be open to a 15-minute call?",
+      "Can I send you the two things I shipped?",
       "",
       "Best,",
       firstName,
@@ -116,7 +142,7 @@ async function fallbackDraft(lead: Lead, settings: ProfileSettings) {
       : `Chose the broader version. ${template.personalization.reason}`;
 
   return {
-    subject: "Internship Inquiry",
+    subject: OUTREACH_SUBJECT,
     body: normalizeDraftPunctuation(normalizeDraftGreeting(template.body)),
     personalization,
     followUpNote: `Follow up around ${addDays(new Date(), settings.followUpWindowDays).toDateString()}.`,
@@ -191,40 +217,38 @@ export async function generateOutreachDraft(lead: Lead, settings: ProfileSetting
   const contactFirst = lead.contactName ? lead.contactName.split(" ")[0] : null;
   const greeting = contactFirst ? `Hi ${contactFirst} -` : "Hey there -";
 
-  const prompt = `Write a cold outreach email from ${settings.fullName}, a 14-year-old from ${settings.city}, looking for a summer internship. First person only (I/my/me). Under 150 words.
+  const prompt = `Write a cold email from ${settings.fullName}, 14, from ${settings.city}, asking about a summer internship.
 
-SENDER BACKGROUND — use the actual specifics, never water them down:
-- ${accomplishments}
-- Fine with unpaid; parents supportive; remote preferred
-- Tone: ${settings.tone}
+HARD LIMIT: 110 words in the body. Shorter is better. A founder must be able to read and reply in 45 seconds.
+
+WHAT HE ACTUALLY DID (use these, do not soften them, do not invent anything else):
+- DeepAware AI, San Francisco, June to August 2026. In person. Worked on motors, assembly and control software for their OpenArm robot arms. Ran the arms table solo at their Builders Conference in front of about 200 people.
+- Frizzle (YC S25), May to August 2026, remote. Built their cold email infrastructure, about 1,000 sends a day, plus a grant scraper and a writing tool.
+- Solo, AI assisted: two command line tools for his school, a Schoology dashboard, and a ride sharing app he runs a six person team on.
+${accomplishments ? `- Older: ${accomplishments}` : ""}
 
 COMPANY:
 ${companyContext}
 
-STRUCTURE — write exactly these paragraphs, each separated by a blank line:
+STRUCTURE, in this order, blank line between each:
+1. "${greeting}"
+2. One sentence: name, 14, ${settings.city}. Then one sentence on what this company does, only if the context above states it clearly. If it is vague, write "what you're building" instead. Naming their product wrong is worse than being vague.
+3. The two internships, in one short paragraph. Lead with whichever one maps closer to this company. If neither maps, still include both, they are the point of the email.
+4. ONE thing he could help with here. One. Not a list.
+5. "I'd like to do a summer internship with you next year."
+6. A single low effort closing question, such as "Can I send you the two things I shipped?"
+7. "Best,\n${firstName}"
 
-Paragraph 1: "${greeting}"
+BANNED, these are what make an email look automated:
+- em dashes. Use commas, periods or parentheses.
+- the words: passionate, excited, thrilled, opportunity, leverage, robust, journey, delve, landscape, reach out, hope this finds you well, I know I'm young, I know my age makes this unusual
+- apologising for his age or experience. State the age once as a fact and move on.
+- offering to work unpaid. Do not mention money at all.
+- flattery about the company that could apply to any company.
+- more than one question in the whole email.
+- links, attachments, bullet lists, a P.S.
 
-Paragraph 2: Introduce yourself by name, age (14), and city. Then reference what this company does — only if the context clearly confirms it. If the company description is vague or uncertain, say something general like "what you're building" rather than naming a specific product you're not sure about. Getting their product wrong is worse than being vague.
-
-Paragraph 3: 1–2 sentences of background. HARD RULE: only mention a project from the sender background list above if it directly connects to what this company does. If trading tools, IBKR, or Pine Script don't map to their work, cut them entirely — do not mention them. ABSOLUTE RULE: NEVER invent, fabricate, or imply any project, system, or accomplishment not explicitly listed in the sender background above. If no listed project maps to this company, write a brief general statement about skills (e.g. "I've been shipping software with AI tools and building trading automation") without claiming a specific unlisted project. For any project you do mention, frame it honestly: Saarth used AI tools to build and ship it. Write "shipped using AI tools" or "built with AI assistance" — never just "built" or "developed" alone.
-
-Paragraph 4: Name exactly ONE thing you could help with. If you write more than one, delete all but the most relevant. Do not write a list. Do not write "testing, QA, docs, research" or any variation — pick one concrete thing.
-
-Paragraph 5: "I'd love to have an internship here. Unpaid is fine with me." Then propose one specific task in a single sentence — something concrete they can hand you on day one, not a category of work. Do not write "just say the word" or any casual filler.
-
-Paragraph 6: "Would you be open to a 15-minute call?"
-
-Paragraph 7: "Best,\\n${firstName}"
-
-RULES:
-- Simple words, short sentences — write like you talk
-- No hollow phrases: "passionate about", "innovative", "excited about the opportunity", "demonstrate my abilities"
-- No "a bit" anywhere
-- No links, no attachments
-- First person only
-- Output the email body only — no subject line, no commentary`;
-
+STYLE: short sentences, plain words, first person, sounds like a person typing quickly and carefully. Output the email body only, no subject line, no commentary.`;
 
   try {
     const model = isAiConfigured()
@@ -236,7 +260,7 @@ RULES:
     const cleaned = normalizeDraftPunctuation(normalizeDraftGreeting(text.trim()));
 
     return {
-      subject: "Internship Inquiry",
+      subject: OUTREACH_SUBJECT,
       body: cleaned,
       personalization: `AI-generated (${isAiConfigured() ? "gpt-4o" : "groq/llama-3.3-70b"}). ${personalization.reason}`,
       followUpNote: `Follow up around ${addDays(new Date(), settings.followUpWindowDays).toDateString()}.`,

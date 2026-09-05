@@ -9,7 +9,25 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-test("fallback draft uses the exact internship subject and technical template for founder-led AI companies", async () => {
+// One place that encodes what a good draft looks like. Wording can change; these can't.
+function assertDraftContract(draft: { subject: string; body: string }) {
+  assert.equal(draft.subject, "intern next summer? (14, shipped at 2 startups)");
+  assert.match(draft.body, /^Hi\b/);
+  assert.match(draft.body, /DeepAware/);
+  assert.match(draft.body, /Frizzle/);
+  assert.match(draft.body, /Best,\nSaarth$/);
+  // Saarth's voice rules: no em dashes, never "genuinely"/"honestly".
+  assert.doesNotMatch(draft.body, /[—–]|--/);
+  assert.doesNotMatch(draft.body, /genuinely|honestly/i);
+  // Tells that make a cold email read as automated, plus pre-negotiating on pay.
+  assert.doesNotMatch(draft.body, /passionate|excited|thrilled|leverage|robust|delve|landscape/i);
+  assert.doesNotMatch(draft.body, /unpaid|free of charge|no pay/i);
+  assert.doesNotMatch(draft.body, /I know (?:I'm|my age|14 is)/i);
+  // One ask only. More than one question is how a cold email gets ignored.
+  assert.equal((draft.body.match(/\?/g) ?? []).length, 1);
+}
+
+test("technical draft leads with both internships and passes the draft contract", async () => {
   let fetchCalls = 0;
   globalThis.fetch = async () => {
     fetchCalls += 1;
@@ -40,18 +58,12 @@ test("fallback draft uses the exact internship subject and technical template fo
     defaultSettings,
   );
 
-  assert.equal(draft.subject, "Internship Inquiriy");
+  assertDraftContract(draft);
   assert.equal(fetchCalls, 0);
-  assert.match(draft.body, /^Hey there,/);
-  assert.match(draft.body, /I'm Saarth Ranka\. I'm 14, from Cupertino, and I'm looking for a summer internship this summer\./i);
-  assert.match(draft.body, /building trading-adjacent AI infrastructure tools for developers/i);
-  assert.match(draft.body, /I know 14 is younger than most people who send emails like this, so I'll keep it simple/i);
-  assert.match(draft.body, /I came across Signal Forge while looking for AI teams, and your work on building trading-adjacent AI infrastructure tools for developers stood out to me\./i);
-  assert.match(draft.body, /Because of that, I thought I could probably be useful with testing edge cases, QA, docs, research, or small automation work\./i);
-  assert.doesNotMatch(draft.body, /extra set of hands|help out at an AI startup|—|--/i);
+  assert.match(draft.body, /trading-adjacent AI infrastructure tools for developers/i);
 });
 
-test("fallback draft uses the broader useful template for general startup outreach", async () => {
+test("general draft adds the solo projects and passes the draft contract", async () => {
   const { generateOutreachDraft } = await import("./ai");
   const { defaultSettings } = await import("./seed-data");
 
@@ -76,26 +88,23 @@ test("fallback draft uses the broader useful template for general startup outrea
     defaultSettings,
   );
 
-  assert.equal(draft.subject, "Internship Inquiriy");
-  assert.match(draft.body, /^Hey there,/);
-  assert.match(draft.body, /Quick background: I built and sold a small gaming\/proxy site at school with about 20 customers/i);
-  assert.match(draft.body, /Outside tech, I've played tabla for nine years/i);
-  assert.match(draft.body, /I don't need anything formal\. I'd just like a chance to help and learn/i);
-  assert.match(draft.body, /If it makes more sense to start with a small trial task, I'd be happy to do that first\./i);
-  assert.doesNotMatch(draft.body, /fancy title|chance to be useful|lighten the load|—|--/i);
+  assertDraftContract(draft);
+  assert.match(draft.body, /command line tools|Schoology dashboard|ride sharing app/i);
 });
 
-test("normalizes personalized greetings to a consistent hey there opener", async () => {
+test("keeps a real greeting and only adds one when it is missing", async () => {
   const { normalizeDraftGreeting } = await import("./ai");
 
+  // A named greeting outperforms a generic one, so it is left alone.
   assert.equal(
     normalizeDraftGreeting("Hi Channel3 team,\n\nBody paragraph."),
-    "Hey there,\n\nBody paragraph.",
+    "Hi Channel3 team,\n\nBody paragraph.",
   );
   assert.equal(
     normalizeDraftGreeting("Hello Chris,\n\nBody paragraph."),
-    "Hey there,\n\nBody paragraph.",
+    "Hello Chris,\n\nBody paragraph.",
   );
+  assert.equal(normalizeDraftGreeting("Body paragraph."), "Hi,\n\nBody paragraph.");
 });
 
 test("drafts strip scraped taglines and avoid canned startup phrases", async () => {
@@ -123,8 +132,9 @@ test("drafts strip scraped taglines and avoid canned startup phrases", async () 
     defaultSettings,
   );
 
+  assertDraftContract(draft);
   assert.match(draft.body, /\bOnlook\b/);
-  assert.doesNotMatch(draft.body, /Cursor for Designers|extra set of hands|fancy title|lighten the load|—|--/i);
+  assert.doesNotMatch(draft.body, /Cursor for Designers/i);
 });
 
 test("drafts personalize from stored lead notes without scraping when the lead already has a strong description", async () => {
@@ -160,9 +170,9 @@ test("drafts personalize from stored lead notes without scraping when the lead a
   );
 
   assert.equal(fetchCalls, 0);
+  assertDraftContract(draft);
   assert.match(draft.body, /I found Archal through YC/i);
   assert.match(draft.body, /the eval platform for autonomous software/i);
-  assert.match(draft.body, /Because of that, I thought I could probably be useful with testing edge cases, QA, docs, research, or small automation work\./i);
 });
 
 test("drafts keep a cold-email tone without explicit hiring language", async () => {
@@ -237,9 +247,9 @@ test("drafts keep a cold-email tone without explicit hiring language", async () 
   );
 
   assert.ok(fetchCalls.length >= 1);
-  assert.match(draft.body, /I checked out Onlook's site/i);
-  assert.match(draft.body, /visual editor for React apps/i);
-  assert.match(draft.body, /testing product flows, user feedback, docs, or support/i);
+  assertDraftContract(draft);
+  assert.match(draft.body, /Onlook/);
+  assert.match(draft.body, /visual editor for react apps/i);
   assert.doesNotMatch(draft.body, /hiring for|not applying for that role/i);
 });
 
@@ -301,6 +311,6 @@ test("drafts ignore error-page copy like page not found when scraping company de
     defaultSettings,
   );
 
+  assertDraftContract(draft);
   assert.doesNotMatch(draft.body, /page not found|404|does not exist/i);
-  assert.match(draft.body, /Because of that, I thought I could probably be useful with testing, research, docs, support, or simple web tasks\./i);
 });

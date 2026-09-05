@@ -196,7 +196,28 @@ export async function sendOutreachEmail(leadId: string) {
   const now = new Date().toISOString();
 
   if (!isLiveGmailConfigured()) {
-    throw new Error("Gmail is not configured. Connect Gmail to send emails.");
+    // Demo mode: record the send locally and make no Gmail call, so the dashboard
+    // is usable (and testable) without Google credentials.
+    const demoThread: OutreachThread = {
+      ...draft,
+      draftStatus: "sent",
+      latestSnippet: "Demo mode. No email was actually sent.",
+      outcomeLabel: "Sent (demo)",
+      sentAt: now,
+      lastMessageAt: now,
+    };
+
+    await upsertThread(demoThread);
+    await updateLeadStatus(lead.id, "sent", demoThread.id);
+    await appendActivity({
+      type: "thread_sent",
+      title: `Demo send to ${lead.companyName}`,
+      detail: `Would have gone to ${lead.contactEmail}`,
+      occurredAt: now,
+      companyName: lead.companyName,
+    });
+
+    return { mode: "demo" as const, thread: demoThread };
   }
 
   const gmail = await getGmailClient();
@@ -240,8 +261,21 @@ export async function sendOutreachEmail(leadId: string) {
   };
 }
 
+// Gmail spam-flags a personal account that fires a burst of near-identical mail.
+// The April/May 2026 run sent 167, 250 and 189 in single days and got filtered.
+// ponytail: fixed jittered gap, swap for a real scheduler if sending moves off a single click.
+const SEND_GAP_MS = 8_000;
+const SEND_JITTER_MS = 12_000;
+
+function sentTodayCount(threads: OutreachThread[]) {
+  const today = new Date().toISOString().slice(0, 10);
+  return threads.filter((thread) => thread.sentAt?.slice(0, 10) === today).length;
+}
+
 export async function sendOutreachBatch(leadIds?: string[]) {
-  const [leads, threads] = await Promise.all([listLeads(), listThreads()]);
+  const [leads, threads, settings] = await Promise.all([listLeads(), listThreads(), getProfileSettings()]);
+  const dailyCap = Math.max(1, settings.dailySendTarget);
+  let remainingToday = Math.max(0, dailyCap - sentTodayCount(threads));
   const leadMap = new Map(leads.map((lead) => [lead.id, lead]));
   const threadMap = buildThreadMap(threads);
   const requestedIds = leadIds?.length ? leadIds : leads.map((lead) => lead.id);
@@ -282,7 +316,24 @@ export async function sendOutreachBatch(leadIds?: string[]) {
       continue;
     }
 
+    if (remainingToday <= 0) {
+      results.push({
+        leadId: lead.id,
+        companyName: lead.companyName,
+        status: "skipped",
+        reason: `Daily send cap of ${dailyCap} reached. Queued for tomorrow.`,
+      });
+      continue;
+    }
+
+    if (results.some((result) => result.status === "sent")) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, SEND_GAP_MS + Math.random() * SEND_JITTER_MS),
+      );
+    }
+
     await sendOutreachEmail(lead.id);
+    remainingToday -= 1;
     results.push({
       leadId: lead.id,
       companyName: lead.companyName,
@@ -292,6 +343,8 @@ export async function sendOutreachBatch(leadIds?: string[]) {
   }
 
   return {
+    dailyCap,
+    remainingToday,
     sentCount: results.filter((result) => result.status === "sent").length,
     skippedCount: results.filter((result) => result.status === "skipped").length,
     results,

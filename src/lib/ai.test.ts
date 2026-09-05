@@ -10,24 +10,33 @@ afterEach(() => {
 });
 
 // One place that encodes what a good draft looks like. Wording can change; these can't.
+// Structure is Zach Lin's: credibility line, the specific thing about them tied back to
+// Saarth's own work, one small ask, friction removed.
 function assertDraftContract(draft: { subject: string; body: string }) {
-  assert.equal(draft.subject, "intern next summer? (14, shipped at 2 startups)");
+  assert.equal(draft.subject, "quick question from a 14 year old who shipped at 2 startups");
   assert.match(draft.body, /^Hi\b/);
   assert.match(draft.body, /DeepAware/);
   assert.match(draft.body, /Frizzle/);
-  assert.match(draft.body, /Best,\nSaarth$/);
+  assert.match(draft.body, /caught my attention because/);
+  assert.match(draft.body, /Would love 15 minutes/);
+  assert.match(draft.body, /Happy to work around your schedule\.\n\nSaarth$/);
+  // The conference story is real and belongs in an essay, not in a cold email.
+  assert.doesNotMatch(draft.body, /200 people|Builders Conference|arms table|award/i);
   // Saarth's voice rules: no em dashes, never "genuinely"/"honestly".
   assert.doesNotMatch(draft.body, /[—–]|--/);
   assert.doesNotMatch(draft.body, /genuinely|honestly/i);
   // Tells that make a cold email read as automated, plus pre-negotiating on pay.
   assert.doesNotMatch(draft.body, /passionate|excited|thrilled|leverage|robust|delve|landscape/i);
-  assert.doesNotMatch(draft.body, /unpaid|free of charge|no pay/i);
+  assert.doesNotMatch(draft.body, /unpaid|free of charge|no pay|pick your brain/i);
   assert.doesNotMatch(draft.body, /I know (?:I'm|my age|14 is)/i);
-  // One ask only. More than one question is how a cold email gets ignored.
-  assert.equal((draft.body.match(/\?/g) ?? []).length, 1);
+  // The first email asks for a conversation, never for the job.
+  assert.doesNotMatch(draft.body, /I'd (?:like|love) to (?:do a|intern|have an internship)/i);
+  // One ask only, phrased as a statement.
+  assert.ok((draft.body.match(/\?/g) ?? []).length <= 1, "at most one question mark");
+  assert.ok(draft.body.split(/\s+/).length <= 130, `body is ${draft.body.split(/\s+/).length} words`);
 }
 
-test("technical draft leads with both internships and passes the draft contract", async () => {
+test("draft leads with one credibility line and passes the contract", async () => {
   let fetchCalls = 0;
   globalThis.fetch = async () => {
     fetchCalls += 1;
@@ -63,7 +72,7 @@ test("technical draft leads with both internships and passes the draft contract"
   assert.match(draft.body, /trading-adjacent AI infrastructure tools for developers/i);
 });
 
-test("general draft adds the solo projects and passes the draft contract", async () => {
+test("draft connects the company detail back to Saarth's own work", async () => {
   const { generateOutreachDraft } = await import("./ai");
   const { defaultSettings } = await import("./seed-data");
 
@@ -89,7 +98,7 @@ test("general draft adds the solo projects and passes the draft contract", async
   );
 
   assertDraftContract(draft);
-  assert.match(draft.body, /command line tools|Schoology dashboard|ride sharing app/i);
+
 });
 
 test("keeps a real greeting and only adds one when it is missing", async () => {
@@ -171,8 +180,7 @@ test("drafts personalize from stored lead notes without scraping when the lead a
 
   assert.equal(fetchCalls, 0);
   assertDraftContract(draft);
-  assert.match(draft.body, /I found Archal through YC/i);
-  assert.match(draft.body, /the eval platform for autonomous software/i);
+  assert.match(draft.body, /I saw Archal is the eval platform for autonomous software/i);
 });
 
 test("drafts keep a cold-email tone without explicit hiring language", async () => {

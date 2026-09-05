@@ -12,6 +12,8 @@ export type DraftPersonalization = {
   detailKind: PersonalizationKind;
   introLine: string | null;
   offerLine: string;
+  connectionLine: string;
+  askLine: string;
   roleDetail: string | null;
   helpAreas: string;
   reason: string;
@@ -377,6 +379,58 @@ function buildHelpAreas(detail: string | null, lead: Lead) {
   return "the small unglamorous work that gets pushed to next sprint";
 }
 
+// The half of the email that does the work: a real thread from what this company
+// does back to something Saarth has actually done. Generic flattery gets deleted;
+// a connection the reader recognises makes them answer.
+export function buildConnectionLine(detail: string | null, lead: Lead) {
+  const signal = [lead.companyType, lead.source, lead.notes, detail].join(" ").toLowerCase();
+
+  if (/(outbound|cold email|deliverability|sales|crm|lead gen|growth|marketing)/.test(signal)) {
+    return "caught my attention because I spent the summer on the same problem at Frizzle, and I still do not know how you keep deliverability up once volume goes past a few hundred a day";
+  }
+
+  if (/(robot|hardware|motor|arm|actuator|drone|firmware|teleop|manipulat)/.test(signal)) {
+    return "caught my attention because I was doing arm bring-up at DeepAware this summer, and I want to know how you decided what to build yourselves versus buy off the shelf";
+  }
+
+  if (/(on.device|phone|mobile|edge|local model|quantiz|embedded)/.test(signal)) {
+    return "caught my attention because I have been running models locally on my own machine all year, and I want to know what actually breaks first when you push one onto a phone";
+  }
+
+  if (/(agent|eval|benchmark|llm|model|inference|fine-tun)/.test(signal)) {
+    return "caught my attention because I have been building on top of models all year and the part I cannot work out is how you tell a real eval from one that just looks good";
+  }
+
+  if (/(trading|hedge|portfolio|quant|market|broker|capital|banking|fintech|payment)/.test(signal)) {
+    return "caught my attention because I trade futures and write my own strategies, and I want to know how you handle the gap between a backtest and live money";
+  }
+
+  if (/(school|student|education|edtech|learning|course|teacher)/.test(signal)) {
+    return "caught my attention because I built a dashboard my classmates use to track their grades, and the hard part turned out to be getting anyone to open it twice";
+  }
+
+  if (/(developer|api|infra|tool|workflow|automation|devops|platform)/.test(signal)) {
+    return "caught my attention because I built three command line tools this year for things my school would not give me access to, and I want to know how you picked what to build first";
+  }
+
+  return "caught my attention because I have shipped four products this year and the thing I am worst at is deciding what not to build";
+}
+
+// One small, specific ask. Never a list, never "pick your brain".
+export function buildAskLine(detail: string | null, lead: Lead) {
+  const signal = [lead.companyType, lead.source, lead.notes, detail].join(" ").toLowerCase();
+
+  if (/(robot|hardware|motor|arm|actuator|drone|firmware)/.test(signal)) {
+    return "Would love 15 minutes to hear what the hardware side of an early team actually looks like day to day.";
+  }
+
+  if (/(outbound|cold email|sales|crm|growth|marketing)/.test(signal)) {
+    return "Would love 15 minutes to hear how you think about that, and what the work actually looks like on your side.";
+  }
+
+  return "Would love 15 minutes to hear how you got to that, and what the work actually looks like day to day.";
+}
+
 function roleFocusPhrase(roleDetail: string | null) {
   const signal = roleDetail?.toLowerCase() ?? "";
 
@@ -420,6 +474,8 @@ export async function buildDraftPersonalization(lead: Lead): Promise<DraftPerson
       detailKind: "lead",
       introLine: buildIntroLine(lead, leadDetail, "lead"),
       offerLine: buildOfferLine(noteRoleDetail, helpAreas),
+      connectionLine: buildConnectionLine(leadDetail, lead),
+      askLine: buildAskLine(leadDetail, lead),
       roleDetail: noteRoleDetail,
       helpAreas,
       reason: "Used the stored lead notes because they already included a concrete company detail.",
@@ -436,6 +492,8 @@ export async function buildDraftPersonalization(lead: Lead): Promise<DraftPerson
       detailKind: "scrape",
       introLine: buildIntroLine(lead, scrapedDetail, "scrape"),
       offerLine: buildOfferLine(roleDetail, helpAreas),
+      connectionLine: buildConnectionLine(scrapedDetail, lead),
+      askLine: buildAskLine(scrapedDetail, lead),
       roleDetail,
       helpAreas,
       reason: roleDetail
@@ -451,6 +509,8 @@ export async function buildDraftPersonalization(lead: Lead): Promise<DraftPerson
     detailKind: "fallback",
     introLine: null,
     offerLine: buildOfferLine(roleDetail, fallbackHelpAreas),
+    connectionLine: buildConnectionLine(null, lead),
+    askLine: buildAskLine(null, lead),
     roleDetail,
     helpAreas: fallbackHelpAreas,
     reason: roleDetail

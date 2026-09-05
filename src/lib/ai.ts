@@ -21,14 +21,38 @@ const replyOutputSchema = z.object({
 
 // The subject line is the single biggest lever on open rate. "Internship Inquiry"
 // reads as mass mail; this one is specific and survives the inbox preview.
-export const OUTREACH_SUBJECT = "quick question from a 14 year old who shipped at 2 startups";
+// Named after the company so it does not read as a blast, and it says what it is.
+export function outreachSubject(companyName: string) {
+  return `Internship opportunities at ${companyName} this summer?`;
+}
 
 // The one paragraph that changed between the 2026 round and this one. Everything
 // else in a cold email is framing; this is the evidence.
 // One line, not a paragraph. It has to establish he is worth reading and then get
 // out of the way, because the next line is the one that earns the reply.
-const CREDIBILITY_LINE =
-  "I'm Saarth, 14, from Cupertino. This summer I wrote control software for the robot arms at DeepAware AI in SF, and built the cold email infrastructure at Frizzle (YC S25).";
+// Age comes from the date of birth so the email can never claim the wrong one.
+const BIRTH_DATE = new Date("2012-04-12T00:00:00Z");
+
+export function ageOn(date = new Date()) {
+  let age = date.getUTCFullYear() - BIRTH_DATE.getUTCFullYear();
+  const beforeBirthday =
+    date.getUTCMonth() < BIRTH_DATE.getUTCMonth() ||
+    (date.getUTCMonth() === BIRTH_DATE.getUTCMonth() && date.getUTCDate() < BIRTH_DATE.getUTCDate());
+  if (beforeBirthday) age -= 1;
+  return age;
+}
+
+function credibilityLine(settings: ProfileSettings) {
+  return [
+    `My name is ${settings.fullName}. I'm ${ageOn()} and a freshman at ${settings.schoolName} in ${settings.city}.`,
+    "This summer I wrote control software for the robot arms at DeepAware AI in SF, and built the cold email infrastructure at Frizzle (YC S25).",
+  ].join(" ");
+}
+
+// The direct ask, with a smaller version of itself attached so a "no" on the full
+// internship does not end the thread.
+const INTERNSHIP_ASK =
+  "I wanted to ask if you have any internship openings for this summer, or something smaller to start, like a trial project. Happy to take one task first so you can see the work.";
 
 // contactName is often a role ("Founding team", "Support"), not a person. Greeting a
 // company with "Hi Founding," is worse than not using a name at all.
@@ -79,13 +103,13 @@ async function buildTemplate(lead: Lead, settings: ProfileSettings) {
     body: joinDraftLines([
       greetingFor(lead),
       "",
-      CREDIBILITY_LINE,
+      credibilityLine(settings),
       "",
       `${observation}, which ${personalization.connectionLine}.`,
       "",
-      personalization.askLine,
+      INTERNSHIP_ASK,
       "",
-      "Happy to work around your schedule.",
+      "Thanks for your time either way, and I can work around your schedule.",
       "",
       firstName,
     ]),
@@ -93,12 +117,10 @@ async function buildTemplate(lead: Lead, settings: ProfileSettings) {
   };
 }
 
-// Scraped company copy runs long and reads as a quoted tagline. One clause, lowercased
-// so it sits inside his sentence rather than looking pasted in.
 function clipDetail(value: string) {
   const firstClause = (value.split(/(?<=[.!?])\s+/)[0] ?? value).replace(/[.!?]+$/, "").trim();
   const clipped =
-    firstClause.length > 90 ? firstClause.slice(0, 90).replace(/[\s,;:]+\S*$/, "") : firstClause;
+    firstClause.length > 70 ? firstClause.slice(0, 70).replace(/[\s,;:]+\S*$/, "") : firstClause;
   return /^[A-Z]{2,}/.test(clipped) ? clipped : clipped.charAt(0).toLowerCase() + clipped.slice(1);
 }
 
@@ -107,7 +129,7 @@ async function fallbackDraft(lead: Lead, settings: ProfileSettings) {
   const personalization = template.personalization.reason;
 
   return {
-    subject: OUTREACH_SUBJECT,
+    subject: outreachSubject(lead.companyName),
     body: normalizeDraftPunctuation(normalizeDraftGreeting(template.body)),
     personalization,
     followUpNote: `Follow up around ${addDays(new Date(), settings.followUpWindowDays).toDateString()}.`,
@@ -182,66 +204,42 @@ export async function generateOutreachDraft(lead: Lead, settings: ProfileSetting
   const contactFirst = lead.contactName ? lead.contactName.split(" ")[0] : null;
   const greeting = contactFirst ? `Hi ${contactFirst} -` : "Hey there -";
 
-  const prompt = `Write a cold email from ${settings.fullName}, 14, from ${settings.city}.
+  const prompt = `Write a cold email from ${settings.fullName}, ${ageOn()}, a freshman at ${settings.schoolName} in ${settings.city}, asking about a summer internship.
 
-The goal is a 15 minute conversation, NOT a job. Do not ask for an internship. The
-internship comes out of the conversation. Asking for it in a first cold email is what
-gets ignored.
+HARD LIMIT: 120 words in the body. Five short paragraphs.
 
-HARD LIMIT: 90 words in the body. Four short paragraphs. Zach Lin's structure, which got
-a reply in ten minutes from a founder:
-  1. one line of credibility
-  2. the one specific thing about THEM that nobody else would mention, and why it caught
-     your attention, tied to something you have actually done
-  3. one small specific ask
-  4. one line removing all friction
+STRUCTURE, in this order, blank line between each:
+
+1. "${greeting}"
+
+2. Who he is, two sentences: "My name is ${settings.fullName}. I'm ${ageOn()} and a freshman at ${settings.schoolName} in ${settings.city}." Then the two internships below, one clause each. Do not expand them. Never mention the conference, the 200 people, or any award. It makes the email about him instead of them.
+
+3. The paragraph that earns the reply. Name ONE specific thing this company or person did, from the context below. Not their category, not their tagline, not their job title, and not something true of every company in their space. Then say why it caught his attention, tied to a real thread back to his own work, and end on the part he does not know yet. A real open question beats a compliment.
+
+4. The ask, direct: whether they have internship openings for this summer, or something smaller to start such as a trial project. Then offer to take one concrete task first so they can see the work. Do not mention pay in any direction.
+
+5. "Thanks for your time either way, and happy to work around your schedule."
+
+6. "${firstName}"
 
 WHAT HE ACTUALLY DID (never invent anything outside this list):
-- DeepAware AI, San Francisco, summer 2026, in person. Control software, motors and
-  assembly for their OpenArm robot arms.
-- Frizzle (YC S25), summer 2026, remote. Built their cold email infrastructure, about
-  1,000 sends a day.
-- Solo, AI assisted: three command line tools for his school, a grades dashboard his
-  classmates use, a ride app he runs a six person team on. Trades futures with his own strategies.
+- DeepAware AI, San Francisco, summer 2026, in person. Control software, motors and assembly for their OpenArm robot arms.
+- Frizzle (YC S25), summer 2026, remote. Built their cold email infrastructure, about 1,000 sends a day.
+- Solo, AI assisted: three command line tools for his school, a grades dashboard his classmates use, a ride app he runs a six person team on. Trades futures with his own strategies.
 ${accomplishments ? `- Older: ${accomplishments}` : ""}
 
 COMPANY:
 ${companyContext}
 
-WRITE EXACTLY THIS, blank line between each:
-
-1. "${greeting}"
-
-2. Credibility in ONE sentence: "I'm ${firstName}, 14, from ${settings.city}." then the two
-   internships in one clause each. Do not expand them. Do not mention the conference, the
-   200 people, or any award. It makes the email about him instead of about them.
-
-3. The important paragraph. Name ONE specific thing this company or this person did, from
-   the context above. Not their category, not their tagline, not their job title, and not
-   something true of every company in their space. Then say it caught your attention BECAUSE
-   of a real thread back to his own work, and end on the thing he does not know yet. A real
-   open question beats a compliment. If the context is too vague to name something specific,
-   write "I found them through YC" and connect on what they build instead of inventing a detail.
-
-4. The ask: "Would love 15 minutes to hear" plus the specific thing from paragraph 3. One ask.
-   Phrase it as a statement, not a question.
-
-5. "Happy to work around your schedule."
-
-6. "${firstName}"
-
 BANNED, these are what make an email look automated:
 - em dashes. Use commas, periods or parentheses.
-- passionate, excited, thrilled, opportunity, leverage, robust, journey, delve, landscape,
-  reach out, hope this finds you well, pick your brain, I know I'm young, I know my age
-  makes this unusual, I'd love to intern, unpaid
+- passionate, excited, thrilled, opportunity to, leverage, robust, journey, delve, landscape, reach out, hope this finds you well, pick your brain, I know I'm young, I know my age makes this unusual, unpaid, free
 - apologising for his age. State it once as a fact and move on.
-- flattery that would be true of any company ("love what you're building").
+- flattery true of any company ("love what you're building").
 - more than one ask.
 - links, attachments, bullet lists, a P.S., a "Best," before the name.
 
-STYLE: short sentences, plain words, first person, sounds like a person typing quickly and
-carefully. Output the email body only, no subject line, no commentary.`;
+STYLE: short sentences, plain words, first person, sounds like a person typing quickly and carefully. Warm at the close, not cold. Output the email body only, no subject line, no commentary.`;
 
   try {
     const model = isAiConfigured()
@@ -253,7 +251,7 @@ carefully. Output the email body only, no subject line, no commentary.`;
     const cleaned = normalizeDraftPunctuation(normalizeDraftGreeting(text.trim()));
 
     return {
-      subject: OUTREACH_SUBJECT,
+      subject: outreachSubject(lead.companyName),
       body: cleaned,
       personalization: `AI-generated (${isAiConfigured() ? "gpt-4o" : "groq/llama-3.3-70b"}). ${personalization.reason}`,
       followUpNote: `Follow up around ${addDays(new Date(), settings.followUpWindowDays).toDateString()}.`,

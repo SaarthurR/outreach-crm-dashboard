@@ -15,6 +15,7 @@ import {
   upsertThread,
 } from "@/lib/db/repository";
 import { env, isLiveGmailConfigured } from "@/lib/env";
+import { connectionFor } from "@/lib/draft-personalization";
 import { buildThreadMap, getLeadEligibilityReason, isLeadSendable } from "@/lib/outreach";
 import type { Lead, OutreachThread } from "@/lib/types";
 
@@ -132,7 +133,18 @@ export async function generateAndStoreDraftBatch(leadIds?: string[]) {
   const [leads, threads] = await Promise.all([listLeads(), listThreads()]);
   const leadMap = new Map(leads.map((lead) => [lead.id, lead]));
   const threadMap = buildThreadMap(threads);
-  const requestedIds = leadIds?.length ? leadIds : leads.map((lead) => lead.id);
+  // Send the companies Saarth has a real thread to first. Under a daily cap the
+  // queue order decides who actually gets emailed this week, so the strongest
+  // emails should not sit behind 227 generic ones.
+  const requestedIds = leadIds?.length
+    ? leadIds
+    : [...leads]
+        .sort((left, right) => {
+          const leftStrong = connectionFor(left.notes, left).strength === "strong" ? 0 : 1;
+          const rightStrong = connectionFor(right.notes, right).strength === "strong" ? 0 : 1;
+          return leftStrong - rightStrong || right.confidence - left.confidence;
+        })
+        .map((lead) => lead.id);
   const seen = new Set<string>();
   const results: Array<{
     leadId: string;
@@ -272,14 +284,88 @@ function sentTodayCount(threads: OutreachThread[]) {
   return threads.filter((thread) => thread.sentAt?.slice(0, 10) === today).length;
 }
 
+// Sends one real draft to an address of your choosing so the formatting can be checked
+// in a real inbox. Deliberately does NOT touch lead status, thread state, the daily
+// counter or the activity log: a test must not consume a send or mark a company done.
+export async function sendTestEmail(to: string, leadId?: string) {
+  const address = to.trim();
+  if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(address)) {
+    throw new Error(`"${address}" is not a valid email address.`);
+  }
+
+  const [leads, threads, settings] = await Promise.all([listLeads(), listThreads(), getProfileSettings()]);
+  const threadMap = buildThreadMap(threads);
+  const lead = leadId
+    ? leads.find((candidate) => candidate.id === leadId)
+    : leads.find((candidate) => isLeadSendable(candidate, threadMap.get(candidate.id)));
+
+  if (!lead) {
+    throw new Error("No lead available to build a test draft from.");
+  }
+
+  const draft = await generateOutreachDraft(lead, settings);
+  const subject = `[TEST] ${draft.subject}`;
+  const preamble = [
+    `This is a test send. The real email would go to ${lead.contactEmail} at ${lead.companyName}.`,
+    "Everything below the line is exactly what that company would receive.",
+    "",
+    "----------------------------------------",
+    "",
+  ].join("\n");
+
+  if (!isLiveGmailConfigured()) {
+    return {
+      mode: "demo" as const,
+      to: address,
+      subject,
+      body: `${preamble}${draft.body}`,
+      sampleCompany: lead.companyName,
+      sampleRecipient: lead.contactEmail,
+    };
+  }
+
+  const gmail = await getGmailClient();
+  if (!gmail) {
+    throw new Error("Gmail client unavailable. Reconnect Gmail and try again.");
+  }
+
+  await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw: buildGmailMessage(address, subject, `${preamble}${draft.body}`) },
+  });
+
+  return {
+    mode: "live" as const,
+    to: address,
+    subject,
+    body: `${preamble}${draft.body}`,
+    sampleCompany: lead.companyName,
+    sampleRecipient: lead.contactEmail,
+  };
+}
+
 export async function sendOutreachBatch(leadIds?: string[]) {
   const [leads, threads, settings] = await Promise.all([listLeads(), listThreads(), getProfileSettings()]);
   const dailyCap = Math.max(1, settings.dailySendTarget);
   let remainingToday = Math.max(0, dailyCap - sentTodayCount(threads));
   const leadMap = new Map(leads.map((lead) => [lead.id, lead]));
   const threadMap = buildThreadMap(threads);
-  const requestedIds = leadIds?.length ? leadIds : leads.map((lead) => lead.id);
+  // Send the companies Saarth has a real thread to first. Under a daily cap the
+  // queue order decides who actually gets emailed this week, so the strongest
+  // emails should not sit behind 227 generic ones.
+  const requestedIds = leadIds?.length
+    ? leadIds
+    : [...leads]
+        .sort((left, right) => {
+          const leftStrong = connectionFor(left.notes, left).strength === "strong" ? 0 : 1;
+          const rightStrong = connectionFor(right.notes, right).strength === "strong" ? 0 : 1;
+          return leftStrong - rightStrong || right.confidence - left.confidence;
+        })
+        .map((lead) => lead.id);
   const seen = new Set<string>();
+  // The lead list has duplicate rows pointing at the same inbox. Two identical cold
+  // emails to one address in one run is the fastest way back into the spam folder.
+  const seenAddresses = new Set<string>();
   const results: Array<{
     leadId: string;
     companyName: string;
@@ -316,6 +402,17 @@ export async function sendOutreachBatch(leadIds?: string[]) {
       continue;
     }
 
+    const address = lead.contactEmail.trim().toLowerCase();
+    if (seenAddresses.has(address)) {
+      results.push({
+        leadId: lead.id,
+        companyName: lead.companyName,
+        status: "skipped",
+        reason: `Duplicate address, already sending to ${address} in this run`,
+      });
+      continue;
+    }
+
     if (remainingToday <= 0) {
       results.push({
         leadId: lead.id,
@@ -333,6 +430,7 @@ export async function sendOutreachBatch(leadIds?: string[]) {
     }
 
     await sendOutreachEmail(lead.id);
+    seenAddresses.add(address);
     remainingToday -= 1;
     results.push({
       leadId: lead.id,

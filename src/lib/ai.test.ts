@@ -13,27 +13,25 @@ afterEach(() => {
 // Structure is Zach Lin's: credibility line, the specific thing about them tied back to
 // Saarth's own work, one small ask, friction removed.
 function assertDraftContract(draft: { subject: string; body: string }) {
-  assert.equal(draft.subject, "quick question from a 14 year old who shipped at 2 startups");
+  assert.match(draft.subject, /^Internship opportunities at .+ this summer\?$/);
   assert.match(draft.body, /^Hi\b/);
+  assert.match(draft.body, /My name is Saarth Ranka\./);
+  assert.match(draft.body, /freshman at Monta Vista High School/);
   assert.match(draft.body, /DeepAware/);
   assert.match(draft.body, /Frizzle/);
-  assert.match(draft.body, /caught my attention because/);
-  assert.match(draft.body, /Would love 15 minutes/);
-  assert.match(draft.body, /Happy to work around your schedule\.\n\nSaarth$/);
+  assert.match(draft.body, /which .*caught my attention because/);
+  assert.match(draft.body, /internship openings for this summer/);
+  assert.match(draft.body, /Thanks for your time either way[^]*\n\nSaarth$/);
   // The conference story is real and belongs in an essay, not in a cold email.
   assert.doesNotMatch(draft.body, /200 people|Builders Conference|arms table|award/i);
   // Saarth's voice rules: no em dashes, never "genuinely"/"honestly".
-  assert.doesNotMatch(draft.body, /[—–]|--/);
+  assert.doesNotMatch(draft.body, /[\u2014\u2013]|--/);
   assert.doesNotMatch(draft.body, /genuinely|honestly/i);
   // Tells that make a cold email read as automated, plus pre-negotiating on pay.
   assert.doesNotMatch(draft.body, /passionate|excited|thrilled|leverage|robust|delve|landscape/i);
   assert.doesNotMatch(draft.body, /unpaid|free of charge|no pay|pick your brain/i);
-  assert.doesNotMatch(draft.body, /I know (?:I'm|my age|14 is)/i);
-  // The first email asks for a conversation, never for the job.
-  assert.doesNotMatch(draft.body, /I'd (?:like|love) to (?:do a|intern|have an internship)/i);
-  // One ask only, phrased as a statement.
-  assert.ok((draft.body.match(/\?/g) ?? []).length <= 1, "at most one question mark");
-  assert.ok(draft.body.split(/\s+/).length <= 130, `body is ${draft.body.split(/\s+/).length} words`);
+  assert.doesNotMatch(draft.body, /I know (?:I'm|my age|14 is|15 is)/i);
+  assert.ok(draft.body.split(/\s+/).length <= 140, `body is ${draft.body.split(/\s+/).length} words`);
 }
 
 test("draft leads with one credibility line and passes the contract", async () => {

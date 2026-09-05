@@ -8,7 +8,7 @@ export async function loadDashboardData() {
 
     return {
       ...snapshot,
-      stats: buildDashboardStats(snapshot.leads, snapshot.threads),
+      stats: buildDashboardStats(snapshot.leads, snapshot.threads, snapshot.settings.dailySendTarget),
     };
   } catch {
     return buildDemoDashboardData();

@@ -101,6 +101,10 @@ export interface DashboardStats {
   sendableLeads: number;
   optedOut: number;
   emailsSent: number;
+  /** Daily send budget, so the UI can never promise more than the sender will do. */
+  dailyCap: number;
+  sentToday: number;
+  remainingToday: number;
 }
 
 export interface DashboardData {

@@ -184,7 +184,7 @@ export function buildDemoDashboardData(): DashboardData {
   return {
     settings: defaultSettings,
     integration: demoIntegration,
-    stats: buildDashboardStats(demoLeads, demoThreads),
+    stats: buildDashboardStats(demoLeads, demoThreads, defaultSettings.dailySendTarget),
     leads: demoLeads,
     threads: demoThreads,
   };

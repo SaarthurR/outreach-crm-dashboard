@@ -28,6 +28,14 @@ Single-page dashboard (`src/app/page.tsx` → `src/components/dashboard/`) backe
 | Discovery | `src/lib/discovery.ts` — directory + web scraping for contact emails |
 | Send orchestration | `src/lib/outreach.ts` — draft → send → thread upsert → activity log |
 
+### Test sends
+
+`POST /api/test-send` with `{ "to": "someone@example.com" }` builds a real draft from the
+next eligible lead and sends it to that address, prefixed with a note naming the company it
+would really have gone to. It does **not** consume a daily send, mark any company as
+contacted, or write to the activity log. In demo mode it returns the rendered email instead
+of sending. The dashboard exposes it as **Send a test**.
+
 ### Sending limits
 
 `sendOutreachBatch` in `src/lib/gmail.ts` enforces two things that the earlier version did not:
@@ -35,6 +43,14 @@ Single-page dashboard (`src/app/page.tsx` → `src/components/dashboard/`) backe
 - **A daily cap.** `dailySendTarget` from profile settings is counted against messages already
   sent today. Anything over the cap is skipped with a reason, and stays queued for tomorrow.
 - **A gap between sends.** Each message waits 8 to 20 seconds after the previous one.
+
+- **Address de-duplication.** The lead list contains rows that share an inbox; a batch sends
+  to each address at most once.
+- **Never re-contact a reply.** `isLeadSendable` excludes any lead whose thread is in the
+  `yes`, `maybe` or `no` bucket, independently of the lead's own status field. Bounces are
+  classified `no`, so a dead address is never retried.
+- **Strong matches first.** The queue is ordered by whether Saarth has a real connection to
+  what the company does, so the daily cap spends itself on the best emails.
 
 This exists because the April/May 2026 campaign sent 167, 250 and 189 emails on single days
 from a personal Gmail address, which is well past the point where Gmail starts filtering.

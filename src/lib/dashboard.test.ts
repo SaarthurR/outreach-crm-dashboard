@@ -21,9 +21,12 @@ test("dashboard stats reflect the simplified unsent and sent workflow", async ()
   const data = await loadDashboardData();
 
   assert.deepEqual(Object.keys(data.stats).sort(), [
+    "dailyCap",
     "emailsSent",
     "optedOut",
+    "remainingToday",
     "sendableLeads",
+    "sentToday",
     "unsentLeads",
   ]);
   assert.equal(data.stats.unsentLeads, 2);

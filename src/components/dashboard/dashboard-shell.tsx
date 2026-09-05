@@ -22,6 +22,7 @@ import {
   ShieldMinus,
   Sparkles,
   WandSparkles,
+  FlaskConical,
 } from "lucide-react";
 
 import { NAV_ITEMS } from "@/lib/constants";
@@ -121,6 +122,7 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
   const [settingsDraft, setSettingsDraft] = useState(() => toSettingsDraft(data.settings));
   const [leadQuery, setLeadQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [testAddress, setTestAddress] = useState("saanvi.g126@gmail.com");
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
   const [previewPendingLeadId, setPreviewPendingLeadId] = useState<string | null>(null);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
@@ -150,6 +152,10 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
       .toLowerCase()
       .includes(query);
   });
+  const dailyCap = dashboard.stats.dailyCap;
+  const sentToday = dashboard.stats.sentToday;
+  const remainingToday = dashboard.stats.remainingToday;
+
   const eligibleLeadIds = getUnsentLeads(dashboard.leads, dashboard.threads)
     .filter((lead) => isLeadSendable(lead, threadMap.get(lead.id)))
     .map((lead) => lead.id);
@@ -238,9 +244,68 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
     });
   }
 
+  function sendTestEmail() {
+    const to = window.prompt(
+      "Send one test email to which address?\n\nThis does not use up a daily send and does not mark any company as contacted.",
+      testAddress,
+    );
+
+    if (!to) {
+      return;
+    }
+
+    setTestAddress(to);
+
+    runAction(async () => {
+      const response = await fetch("/api/test-send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ to }),
+      });
+      const payload = (await response.json()) as {
+        ok: boolean;
+        mode?: string;
+        sampleCompany?: string;
+        sampleRecipient?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Test send failed.");
+      }
+
+      await refreshDashboard(
+        payload.mode === "demo"
+          ? `Demo mode, so nothing was sent. The draft used ${payload.sampleCompany} as the sample company.`
+          : `Test email sent to ${to}, using the ${payload.sampleCompany} draft. No company was marked as contacted.`,
+      );
+    });
+  }
+
   function sendAllEligibleLeads() {
     if (!eligibleLeadIds.length) {
       setNotice("No eligible companies are left in the unsent queue right now.");
+      return;
+    }
+
+    const willSend = Math.min(remainingToday, eligibleLeadIds.length);
+
+    if (willSend <= 0) {
+      setNotice(
+        `Daily cap reached: ${sentToday} of ${dailyCap} sent today. The rest stay queued until tomorrow.`,
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Send ${willSend} real ${willSend === 1 ? "email" : "emails"} now?\n\n` +
+        `${eligibleLeadIds.length} companies are queued, but the daily cap is ${dailyCap} and ` +
+        `${sentToday} already went out today.\n` +
+        `Each send waits 8 to 20 seconds, so this takes about ${Math.ceil((willSend * 14) / 60)} minutes.\n\n` +
+        `This cannot be undone.`,
+    );
+
+    if (!confirmed) {
       return;
     }
 
@@ -654,13 +719,27 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
 
                 <button
                   className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-black/8 px-5 py-2.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--panel-muted)] disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={isPending || eligibleLeadIds.length === 0}
+                  disabled={isPending || eligibleLeadIds.length === 0 || remainingToday === 0}
                   onClick={sendAllEligibleLeads}
                   type="button"
                 >
                   {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Send {eligibleLeadIds.length > 0 ? `${eligibleLeadIds.length} eligible` : "eligible emails"}
+                  Send {Math.min(remainingToday, eligibleLeadIds.length)} today
                 </button>
+
+                <button
+                  className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-black/8 px-5 py-2.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--panel-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isPending}
+                  onClick={sendTestEmail}
+                  type="button"
+                >
+                  {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
+                  Send a test
+                </button>
+
+                <span className="rounded-full border border-black/8 px-3.5 py-2.5 text-xs text-[color:var(--muted-ink)]">
+                  {sentToday}/{dailyCap} sent today, {eligibleLeadIds.length} queued
+                </span>
 
                 {dashboard.integration.connected ? (
                   <span className="rounded-full border border-black/8 px-3.5 py-2.5 text-xs text-[color:var(--muted-ink)]">

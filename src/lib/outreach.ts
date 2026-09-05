@@ -18,18 +18,46 @@ export function isLeadInvalid(lead: Lead) {
   return lead.status === "invalid" || !lead.contactEmail;
 }
 
-export function isLeadSendable(lead: Lead, thread?: OutreachThread) {
-  return !isLeadSent(lead, thread) && !isLeadOptedOut(lead) && !isLeadInvalid(lead);
+// A thread in any bucket other than needs_reply means a human (or a bounce) already
+// came back. Cold-emailing them again is the worst outcome this app can produce:
+// it re-pitches someone who said no, re-pitches a company he already worked at, or
+// re-sends to a dead address and burns sender reputation. Checked independently of
+// sentAt so a cleared or missing thread timestamp cannot let one through.
+const REPLIED_BUCKETS = new Set(["yes", "maybe", "no"]);
+
+export function hasReplied(thread?: OutreachThread) {
+  return Boolean(thread && REPLIED_BUCKETS.has(thread.bucket));
 }
 
-export function buildDashboardStats(leads: Lead[], threads: OutreachThread[]): DashboardStats {
+export function isLeadSendable(lead: Lead, thread?: OutreachThread) {
+  return (
+    !isLeadSent(lead, thread) &&
+    !hasReplied(thread) &&
+    !isLeadOptedOut(lead) &&
+    !isLeadInvalid(lead)
+  );
+}
+
+export function countSentToday(threads: OutreachThread[], today = new Date().toISOString().slice(0, 10)) {
+  return threads.filter((thread) => thread.sentAt?.slice(0, 10) === today).length;
+}
+
+export function buildDashboardStats(
+  leads: Lead[],
+  threads: OutreachThread[],
+  dailyCap = 0,
+): DashboardStats {
   const threadMap = buildThreadMap(threads);
+  const sentToday = countSentToday(threads);
 
   return {
     unsentLeads: leads.filter((lead) => !isLeadSent(lead, threadMap.get(lead.id))).length,
     sendableLeads: leads.filter((lead) => isLeadSendable(lead, threadMap.get(lead.id))).length,
     optedOut: leads.filter(isLeadOptedOut).length,
     emailsSent: leads.filter((lead) => isLeadSent(lead, threadMap.get(lead.id))).length,
+    dailyCap,
+    sentToday,
+    remainingToday: Math.max(0, dailyCap - sentToday),
   };
 }
 
@@ -88,6 +116,10 @@ export function getBulkSendLeadIds(leads: Lead[], threads: OutreachThread[], req
 export function getLeadEligibilityReason(lead: Lead, thread?: OutreachThread) {
   if (isLeadSent(lead, thread)) {
     return "Already sent";
+  }
+
+  if (hasReplied(thread)) {
+    return "Already replied, never cold-email again";
   }
 
   if (isLeadOptedOut(lead)) {

@@ -14,10 +14,10 @@ export const defaultSettings: ProfileSettings = {
   fullName: "Saarth Ranka",
   firstName: "Saarth",
   schoolName: "Monta Vista High School",
-  districtName: "CUSDK8 / Cupertino area",
+  districtName: "FUHSD / Cupertino area",
   city: "Cupertino",
   state: "California",
-  targetSeason: "Summer internship, unpaid okay, remote preferred",
+  targetSeason: "Summer 2027 internship, remote or Bay Area",
   remotePreference: "Remote preferred, in-person okay around Cupertino",
   internshipPreference: "Founding teams, AI tools, startups, research-adjacent internships",
   availabilityNotes:
@@ -38,7 +38,7 @@ export const defaultSettings: ProfileSettings = {
     "Running a small engineering team",
   ],
   closingNotes:
-    "Open to any role where strong curiosity, fast execution, and willingness to learn are useful.",
+    "Two startup internships done at 14. Looking for the next one, not for a favour.",
   dailySendTarget: 18,
   followUpWindowDays: 9,
   parentSupport: "Parent-supported and available during the summer.",

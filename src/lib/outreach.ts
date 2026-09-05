@@ -29,6 +29,26 @@ export function hasReplied(thread?: OutreachThread) {
   return Boolean(thread && REPLIED_BUCKETS.has(thread.bucket));
 }
 
+/**
+ * Domains that already came back, from ANY row. The lead list holds several rows per
+ * company (different inboxes at the same place), so a reply recorded against one row
+ * leaves its siblings looking untouched. Frizzle and the Robotics Center, where Saarth
+ * actually interned, each sit in the list twice.
+ */
+export function buildRepliedDomains(leads: Lead[], threads: OutreachThread[]) {
+  const leadById = new Map(leads.map((lead) => [lead.id, lead]));
+  const domains = new Set<string>();
+
+  for (const thread of threads) {
+    const domain = leadById.get(thread.companyId)?.domain?.toLowerCase();
+    if (domain && (hasReplied(thread) || thread.sentAt)) {
+      domains.add(domain);
+    }
+  }
+
+  return domains;
+}
+
 export function isLeadSendable(lead: Lead, thread?: OutreachThread) {
   return (
     !isLeadSent(lead, thread) &&

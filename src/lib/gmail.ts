@@ -16,7 +16,12 @@ import {
 } from "@/lib/db/repository";
 import { env, isLiveGmailConfigured } from "@/lib/env";
 import { connectionFor } from "@/lib/draft-personalization";
-import { buildThreadMap, getLeadEligibilityReason, isLeadSendable } from "@/lib/outreach";
+import {
+  buildRepliedDomains,
+  buildThreadMap,
+  getLeadEligibilityReason,
+  isLeadSendable,
+} from "@/lib/outreach";
 import type { Lead, OutreachThread } from "@/lib/types";
 
 function base64UrlEncode(input: string) {
@@ -406,6 +411,7 @@ export async function sendTestEmail(to: string, leadId?: string) {
 
 export async function sendOutreachBatch(leadIds?: string[]) {
   const [leads, threads, settings] = await Promise.all([listLeads(), listThreads(), getProfileSettings()]);
+  const repliedDomains = buildRepliedDomains(leads, threads);
   const dailyCap = Math.max(1, settings.dailySendTarget);
   let remainingToday = Math.max(0, dailyCap - sentTodayCount(threads));
   const leadMap = new Map(leads.map((lead) => [lead.id, lead]));
@@ -458,6 +464,16 @@ export async function sendOutreachBatch(leadIds?: string[]) {
         companyName: lead.companyName,
         status: "skipped",
         reason: getLeadEligibilityReason(lead, thread),
+      });
+      continue;
+    }
+
+    if (repliedDomains.has(lead.domain.toLowerCase())) {
+      results.push({
+        leadId: lead.id,
+        companyName: lead.companyName,
+        status: "skipped",
+        reason: `Already contacted ${lead.domain} on another address`,
       });
       continue;
     }

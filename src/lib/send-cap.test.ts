@@ -56,3 +56,22 @@ test("batch send stops at the daily cap instead of firing the whole queue", asyn
     ]);
   }
 });
+
+// Frizzle and the Robotics Center, where Saarth actually interned, each appear twice in
+// the lead list under different inboxes. A reply recorded on one row must protect both.
+test("a domain that already replied is never emailed on a sibling address", async () => {
+  const { buildRepliedDomains } = await import("./outreach");
+
+  const leads = [
+    { id: "a", domain: "frizzle.com", contactEmail: "shyam@frizzle.com" },
+    { id: "b", domain: "frizzle.com", contactEmail: "hello@frizzle.com" },
+    { id: "c", domain: "other.com", contactEmail: "hi@other.com" },
+  ] as never[];
+  const threads = [
+    { companyId: "a", bucket: "yes", sentAt: "2026-05-01T00:00:00.000Z" },
+  ] as never[];
+
+  const replied = buildRepliedDomains(leads, threads);
+  assert.ok(replied.has("frizzle.com"), "the sibling row must be covered");
+  assert.ok(!replied.has("other.com"));
+});

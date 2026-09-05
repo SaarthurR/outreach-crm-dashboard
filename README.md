@@ -33,6 +33,23 @@ Single-page dashboard (`src/app/page.tsx` → `src/components/dashboard/`) backe
 | Discovery | `src/lib/discovery.ts` — directory + web scraping for contact emails |
 | Send orchestration | `src/lib/outreach.ts` — draft → send → thread upsert → activity log |
 
+### Resume attachment
+
+Every outgoing email carries `assets/Saarth-Ranka-Resume.pdf`. The message becomes
+`multipart/mixed` wrapping the `multipart/alternative` body, so the formatted email and the
+attachment both arrive. Override the path with `RESUME_PATH`. If the file is missing or
+unreadable the email still sends, without it, rather than failing the batch.
+
+The resume itself is authored as `assets/resume.html` and rendered with headless Chrome:
+
+```bash
+cd assets && "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless --disable-gpu --no-pdf-header-footer \
+  --print-to-pdf=Saarth-Ranka-Resume.pdf resume.html
+```
+
+Edit the HTML, re-run that, and keep it to one page.
+
 ### Test sends
 
 `POST /api/test-send` with `{ "to": "someone@example.com" }` builds a real draft from the

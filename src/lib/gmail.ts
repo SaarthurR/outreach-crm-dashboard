@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { basename, resolve } from "node:path";
+
 import { google } from "googleapis";
 
 import { classifyReply, generateOutreachDraft } from "@/lib/ai";
@@ -67,16 +70,39 @@ function buildHtmlBody(body: string) {
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#202124">\n${paragraphs}\n</div>`;
 }
 
+/**
+ * The resume, read once and cached. Missing or unreadable means the email still goes
+ * out without it: a send is worth more than an attachment, and a throw here would take
+ * down the whole batch.
+ */
+let cachedAttachment: { filename: string; base64: string } | null | undefined;
+
+function getResumeAttachment() {
+  if (cachedAttachment !== undefined) {
+    return cachedAttachment;
+  }
+
+  const path = env.resumePath ?? resolve(process.cwd(), "assets/Saarth-Ranka-Resume.pdf");
+
+  try {
+    const bytes = readFileSync(path);
+    cachedAttachment = {
+      filename: basename(path),
+      base64: bytes.toString("base64").replace(/(.{76})/g, "$1\r\n"),
+    };
+  } catch {
+    cachedAttachment = null;
+  }
+
+  return cachedAttachment;
+}
+
 function buildGmailMessage(to: string, subject: string, body: string) {
   const boundary = `b_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
   const encodedSubject = `=?utf-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
 
-  const message = [
-    `To: ${to}`,
-    `Subject: ${encodedSubject}`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    "",
+  const attachment = getResumeAttachment();
+  const altParts = [
     `--${boundary}`,
     "Content-Type: text/plain; charset=utf-8",
     "Content-Transfer-Encoding: base64",
@@ -91,9 +117,48 @@ function buildGmailMessage(to: string, subject: string, body: string) {
     "",
     `--${boundary}--`,
     "",
-  ].join("\r\n");
+  ];
 
-  return base64UrlEncode(message);
+  if (!attachment) {
+    return base64UrlEncode(
+      [
+        `To: ${to}`,
+        `Subject: ${encodedSubject}`,
+        "MIME-Version: 1.0",
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        "",
+        ...altParts,
+      ].join("\r\n"),
+    );
+  }
+
+  // multipart/mixed wrapping the alternative part, so the resume rides along without
+  // costing the reader the formatted body.
+  const outer = `m_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+
+  return base64UrlEncode(
+    [
+      `To: ${to}`,
+      `Subject: ${encodedSubject}`,
+      "MIME-Version: 1.0",
+      `Content-Type: multipart/mixed; boundary="${outer}"`,
+      "",
+      `--${outer}`,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "",
+      ...altParts,
+      "",
+      `--${outer}`,
+      `Content-Type: application/pdf; name="${attachment.filename}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${attachment.filename}"`,
+      "",
+      attachment.base64,
+      "",
+      `--${outer}--`,
+      "",
+    ].join("\r\n"),
+  );
 }
 
 function parseHeader(headers: { name?: string | null; value?: string | null }[] | undefined, name: string) {
@@ -799,4 +864,4 @@ export async function backfillReplies() {
 }
 
 // Exported for tests only: message assembly has no other seam to check it through.
-export const __testables = { buildGmailMessage, buildHtmlBody };
+export const __testables = { buildGmailMessage, buildHtmlBody, getResumeAttachment };

@@ -28,6 +28,10 @@ export const env = {
   get databaseUrl() {
     return read("DATABASE_URL") ?? "file:local.db";
   },
+  /** Resume attached to every outgoing email. Defaults to assets/ in the repo. */
+  get resumePath() {
+    return read("RESUME_PATH");
+  },
   get gmailPubsubTopic() {
     return read("GMAIL_PUBSUB_TOPIC");
   },

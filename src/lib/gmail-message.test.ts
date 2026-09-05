@@ -34,3 +34,24 @@ test("outgoing mail carries both a plain and an HTML part", async () => {
   assert.match(html, /<a href="tel:\+16504417661">/);
   assert.doesNotMatch(html, /<script/i);
 });
+
+test("the resume rides along as a PDF attachment", async () => {
+  const { __testables } = await import("./gmail");
+
+  const attachment = __testables.getResumeAttachment();
+  assert.ok(attachment, "assets/Saarth-Ranka-Resume.pdf should be readable from the repo");
+  assert.equal(attachment.filename, "Saarth-Ranka-Resume.pdf");
+
+  const raw = __testables.buildGmailMessage("someone@example.com", "Subject", "Hi there,\n\nBody.");
+  const decoded = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+
+  // mixed wraps alternative, so the reader keeps the formatted body AND gets the file.
+  assert.match(decoded, /Content-Type: multipart\/mixed/);
+  assert.match(decoded, /Content-Type: multipart\/alternative/);
+  assert.match(decoded, /Content-Type: application\/pdf; name="Saarth-Ranka-Resume\.pdf"/);
+  assert.match(decoded, /Content-Disposition: attachment; filename="Saarth-Ranka-Resume\.pdf"/);
+  // The PDF must survive base64 intact.
+  const part = decoded.split('Content-Disposition: attachment')[1] ?? "";
+  const payload = part.split("\r\n\r\n")[1]?.split("\r\n--")[0]?.replace(/\r\n/g, "") ?? "";
+  assert.equal(Buffer.from(payload, "base64").subarray(0, 5).toString("latin1"), "%PDF-");
+});

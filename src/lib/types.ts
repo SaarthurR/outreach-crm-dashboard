@@ -1,6 +1,6 @@
 export type NavView = "unsent" | "sent" | "replies";
 
-export type ReplyBucket = "needs_reply" | "yes" | "maybe" | "no";
+export type ReplyBucket = "needs_reply" | "yes" | "maybe" | "no" | "bounced";
 
 export type ContactType = "founder" | "careers" | "general" | "contact";
 
@@ -74,6 +74,16 @@ export interface OutreachThread {
   companyId: string;
   companyName: string;
   gmailThreadId: string | null;
+  /** Gmail API id returned by messages.send */
+  gmailMessageId: string | null;
+  /** Normalized RFC Message-ID for In-Reply-To matching */
+  rfcMessageId: string | null;
+  /** Last inbound Gmail message id applied to this thread */
+  lastInboundMessageId: string | null;
+  /** When Saarth last sent a follow-up in this Gmail thread (detected via sync, not the original cold email) */
+  respondedAt: string | null;
+  /** Manually flagged as an active conversation worth tracking */
+  starred: boolean;
   subject: string;
   latestSnippet: string;
   gmailThreadUrl: string | null;

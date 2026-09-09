@@ -22,8 +22,8 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Internship Company Email Sender",
-  description: "Find public company emails, opt out weak targets, and send outreach from one clean dashboard.",
+  title: "Internship CRM",
+  description: "Import a company list, send outreach from one Gmail account, and track replies.",
 };
 
 export default function RootLayout({

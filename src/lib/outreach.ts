@@ -30,6 +30,34 @@ export function hasReplied(thread?: OutreachThread) {
 }
 
 /**
+ * A thread's bucket alone can't tell "just sent, nothing back yet" apart from "a
+ * reply came in but couldn't be read as yes/no/maybe" — both leave bucket at
+ * needs_reply. The timestamp can: a real reply moves lastMessageAt well past sentAt.
+ * Shared by the Replies/Waiting split and the Inbox reply count so they never disagree.
+ */
+export function hasReceivedReply(thread: OutreachThread) {
+  if (thread.bucket !== "needs_reply") return true;
+  if (!thread.sentAt) return false;
+  return new Date(thread.lastMessageAt).getTime() > new Date(thread.sentAt).getTime() + 60_000;
+}
+
+/**
+ * A reply came in, and Saarth hasn't sent a follow-up since. respondedAt is only set
+ * when sync detects a message FROM Saarth in the thread (not the original cold email,
+ * which never counts as "responding" to a reply that hadn't arrived yet) — see
+ * ingestGmailMessage's self-branch in gmail.ts. Once respondedAt catches up to
+ * lastMessageAt, this flips false on its own; a fresh reply moves lastMessageAt past
+ * it again, so it flips back true with no extra bookkeeping.
+ */
+export function needsResponse(thread: OutreachThread) {
+  // A bounce has no one on the other end to respond to.
+  if (thread.bucket === "bounced") return false;
+  if (!hasReceivedReply(thread)) return false;
+  if (!thread.respondedAt) return true;
+  return new Date(thread.respondedAt).getTime() < new Date(thread.lastMessageAt).getTime();
+}
+
+/**
  * Domains that already came back, from ANY row. The lead list holds several rows per
  * company (different inboxes at the same place), so a reply recorded against one row
  * leaves its siblings looking untouched. Frizzle and the Robotics Center, where Saarth

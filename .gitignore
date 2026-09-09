@@ -27,6 +27,7 @@ local.db
 local.db-*
 local.db.bak-*
 *.bak
+/backups
 
 # debug
 npm-debug.log*

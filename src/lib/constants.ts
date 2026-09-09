@@ -3,8 +3,8 @@ import type { NavView, ReplyBucket } from "@/lib/types";
 export const NAV_ITEMS: Array<{ id: NavView; label: string; helper: string }> = [
   {
     id: "unsent",
-    label: "Unsent",
-    helper: "Public company emails ready or blocked for outreach",
+    label: "Queue",
+    helper: "Contacts imported and ready to email",
   },
   {
     id: "sent",
@@ -13,8 +13,8 @@ export const NAV_ITEMS: Array<{ id: NavView; label: string; helper: string }> = 
   },
   {
     id: "replies",
-    label: "Replies",
-    helper: "Companies that replied, bucketed by outcome",
+    label: "Inbox",
+    helper: "Replies and sent threads waiting on a response",
   },
 ];
 

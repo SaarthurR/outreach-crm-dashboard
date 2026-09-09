@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db/client";
 import {
   activityEvents,
   companies,
+  inboundSeen,
   integrationState,
   outreachThreads,
   profileSettings,
@@ -102,6 +103,11 @@ function mapThread(row: typeof outreachThreads.$inferSelect): OutreachThread {
     companyId: row.companyId,
     companyName: row.companyName,
     gmailThreadId: row.gmailThreadId,
+    gmailMessageId: row.gmailMessageId ?? null,
+    rfcMessageId: row.rfcMessageId ?? null,
+    lastInboundMessageId: row.lastInboundMessageId ?? null,
+    respondedAt: row.respondedAt ?? null,
+    starred: row.starred,
     subject: row.subject,
     latestSnippet: row.latestSnippet,
     gmailThreadUrl: row.gmailThreadUrl,
@@ -197,6 +203,11 @@ export async function ensureSeeded() {
       company_id TEXT NOT NULL,
       company_name TEXT NOT NULL,
       gmail_thread_id TEXT,
+      gmail_message_id TEXT,
+      rfc_message_id TEXT,
+      last_inbound_message_id TEXT,
+      responded_at TEXT,
+      starred INTEGER NOT NULL DEFAULT 0,
       subject TEXT NOT NULL,
       latest_snippet TEXT NOT NULL,
       gmail_thread_url TEXT,
@@ -212,6 +223,13 @@ export async function ensureSeeded() {
     )
   `);
   await db.run(sql`
+    CREATE TABLE IF NOT EXISTS inbound_seen (
+      gmail_message_id TEXT PRIMARY KEY,
+      thread_id TEXT,
+      seen_at TEXT NOT NULL
+    )
+  `);
+  await db.run(sql`
     CREATE TABLE IF NOT EXISTS activity_events (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
@@ -221,6 +239,22 @@ export async function ensureSeeded() {
       company_name TEXT
     )
   `);
+
+  // Existing local.db files only got CREATE TABLE IF NOT EXISTS — add columns if missing.
+  for (const statement of [
+    "ALTER TABLE outreach_threads ADD COLUMN gmail_message_id TEXT",
+    "ALTER TABLE outreach_threads ADD COLUMN rfc_message_id TEXT",
+    "ALTER TABLE outreach_threads ADD COLUMN last_inbound_message_id TEXT",
+    "ALTER TABLE outreach_threads ADD COLUMN responded_at TEXT",
+    "ALTER TABLE outreach_threads ADD COLUMN starred INTEGER NOT NULL DEFAULT 0",
+  ]) {
+    try {
+      await db.run(sql.raw(statement));
+    } catch {
+      // Column already exists.
+    }
+  }
+
     const existing = await db.select({ id: profileSettings.id }).from(profileSettings).limit(1);
 
     if (existing.length > 0) {
@@ -288,6 +322,11 @@ export async function ensureSeeded() {
         companyId: thread.companyId,
         companyName: thread.companyName,
         gmailThreadId: thread.gmailThreadId,
+        gmailMessageId: thread.gmailMessageId,
+        rfcMessageId: thread.rfcMessageId,
+        lastInboundMessageId: thread.lastInboundMessageId,
+        respondedAt: thread.respondedAt,
+        starred: thread.starred,
         subject: thread.subject,
         latestSnippet: thread.latestSnippet,
         gmailThreadUrl: thread.gmailThreadUrl,
@@ -518,6 +557,11 @@ export async function upsertThread(thread: OutreachThread) {
       companyId: thread.companyId,
       companyName: thread.companyName,
       gmailThreadId: thread.gmailThreadId,
+      gmailMessageId: thread.gmailMessageId,
+      rfcMessageId: thread.rfcMessageId,
+      lastInboundMessageId: thread.lastInboundMessageId,
+      respondedAt: thread.respondedAt,
+      starred: thread.starred,
       subject: thread.subject,
       latestSnippet: thread.latestSnippet,
       gmailThreadUrl: thread.gmailThreadUrl,
@@ -537,6 +581,11 @@ export async function upsertThread(thread: OutreachThread) {
         companyId: thread.companyId,
         companyName: thread.companyName,
         gmailThreadId: thread.gmailThreadId,
+        gmailMessageId: thread.gmailMessageId,
+        rfcMessageId: thread.rfcMessageId,
+        lastInboundMessageId: thread.lastInboundMessageId,
+        respondedAt: thread.respondedAt,
+        starred: thread.starred,
         subject: thread.subject,
         latestSnippet: thread.latestSnippet,
         gmailThreadUrl: thread.gmailThreadUrl,
@@ -550,6 +599,81 @@ export async function upsertThread(thread: OutreachThread) {
         outcomeLabel: thread.outcomeLabel,
         updatedAt: nowIso(),
       },
+    });
+}
+
+export async function findThreadById(threadId: string) {
+  await ensureSeeded();
+  const db = getDb();
+  const [row] = await db.select().from(outreachThreads).where(eq(outreachThreads.id, threadId)).limit(1);
+  return row ? mapThread(row) : null;
+}
+
+export async function setThreadStarred(threadId: string, starred: boolean) {
+  await ensureSeeded();
+  const db = getDb();
+  await db
+    .update(outreachThreads)
+    .set({ starred, updatedAt: nowIso() })
+    .where(eq(outreachThreads.id, threadId));
+}
+
+export async function markThreadResponded(threadId: string, respondedAt: string) {
+  await ensureSeeded();
+  const db = getDb();
+  await db
+    .update(outreachThreads)
+    .set({ respondedAt, updatedAt: nowIso() })
+    .where(eq(outreachThreads.id, threadId));
+}
+
+export async function hasSeenInbound(gmailMessageId: string) {
+  await ensureSeeded();
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(inboundSeen)
+    .where(eq(inboundSeen.gmailMessageId, gmailMessageId))
+    .limit(1);
+  return Boolean(row);
+}
+
+export async function markInboundSeen(gmailMessageId: string, threadId: string | null) {
+  await ensureSeeded();
+  const db = getDb();
+  await db
+    .insert(inboundSeen)
+    .values({
+      gmailMessageId,
+      threadId,
+      seenAt: nowIso(),
+    })
+    .onConflictDoUpdate({
+      target: inboundSeen.gmailMessageId,
+      set: {
+        threadId,
+        seenAt: nowIso(),
+      },
+    });
+}
+
+export async function listOutboundCandidates() {
+  const [leads, threads] = await Promise.all([listLeads(), listThreads()]);
+  const leadById = new Map(leads.map((lead) => [lead.id, lead]));
+  return threads
+    .filter((thread) => Boolean(thread.sentAt))
+    .map((thread) => {
+      const lead = leadById.get(thread.companyId);
+      return {
+        id: thread.id,
+        companyId: thread.companyId,
+        contactEmail: lead?.contactEmail ?? "",
+        subject: thread.subject,
+        sentAt: thread.sentAt,
+        gmailThreadId: thread.gmailThreadId,
+        rfcMessageId: thread.rfcMessageId,
+        gmailMessageId: thread.gmailMessageId,
+      };
     });
 }
 

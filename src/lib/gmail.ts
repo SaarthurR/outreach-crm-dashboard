@@ -7,12 +7,16 @@ import { classifyReply, generateOutreachDraft } from "@/lib/ai";
 import {
   appendActivity,
   findLeadById,
-  findThreadByGmailThreadId,
+  findThreadById,
   findThreadByLeadId,
   getIntegrationRow,
   getProfileSettings,
+  hasSeenInbound,
   listLeads,
+  listOutboundCandidates,
   listThreads,
+  markInboundSeen,
+  markThreadResponded,
   saveIntegrationState,
   updateLeadStatus,
   upsertThread,
@@ -25,6 +29,16 @@ import {
   getLeadEligibilityReason,
   isLeadSendable,
 } from "@/lib/outreach";
+import {
+  decodeHtmlEntities,
+  extractBouncedRecipient,
+  extractEmailAddress,
+  isBounceMessage,
+  matchByFallback,
+  matchByGmailThreadId,
+  normalizeMessageId,
+  resolveOutboundThread,
+} from "@/lib/reply-match";
 import type { Lead, OutreachThread } from "@/lib/types";
 
 function base64UrlEncode(input: string) {
@@ -168,17 +182,36 @@ function parseHeader(headers: { name?: string | null; value?: string | null }[] 
   return headers?.find((header) => header.name?.toLowerCase() === name.toLowerCase())?.value ?? null;
 }
 
-function extractEmailAddress(value: string | null) {
-  if (!value) {
-    return null;
-  }
+type MessagePart = { mimeType?: string | null; body?: { data?: string | null } | null; parts?: MessagePart[] | null };
 
-  const match = value.match(/<([^>]+)>/);
-  return (match?.[1] ?? value).trim().toLowerCase();
+/** Depth-first search for the first text part. Good enough for a bounce's plain-language explanation. */
+function extractBodyText(payload: MessagePart | null | undefined): string {
+  if (!payload) return "";
+  if (payload.mimeType?.startsWith("text/") && payload.body?.data) {
+    return Buffer.from(payload.body.data, "base64url").toString("utf8");
+  }
+  for (const part of payload.parts ?? []) {
+    const text = extractBodyText(part);
+    if (text) return text;
+  }
+  return "";
 }
 
 function threadUrl(threadId: string | null) {
   return threadId ? `https://mail.google.com/mail/u/0/#inbox/${threadId}` : null;
+}
+
+function emptyThreadIds(partial?: Partial<OutreachThread>): Pick<
+  OutreachThread,
+  "gmailMessageId" | "rfcMessageId" | "lastInboundMessageId" | "respondedAt" | "starred"
+> {
+  return {
+    gmailMessageId: partial?.gmailMessageId ?? null,
+    rfcMessageId: partial?.rfcMessageId ?? null,
+    lastInboundMessageId: partial?.lastInboundMessageId ?? null,
+    respondedAt: partial?.respondedAt ?? null,
+    starred: partial?.starred ?? false,
+  };
 }
 
 async function getOauthClient() {
@@ -227,6 +260,7 @@ async function ensureDraft(lead: Lead, force = false) {
     companyId: lead.id,
     companyName: lead.companyName,
     gmailThreadId: existing?.gmailThreadId ?? null,
+    ...emptyThreadIds(existing ?? undefined),
     subject: draft.subject,
     latestSnippet: "Draft ready. Waiting for approval.",
     gmailThreadUrl: existing?.gmailThreadUrl ?? null,
@@ -343,8 +377,11 @@ export async function sendOutreachEmail(leadId: string) {
   if (!isLiveGmailConfigured()) {
     // Demo mode: record the send locally and make no Gmail call, so the dashboard
     // is usable (and testable) without Google credentials.
+    const demoMessageId = `demo-${lead.id}-${Date.now()}`;
     const demoThread: OutreachThread = {
       ...draft,
+      gmailMessageId: demoMessageId,
+      rfcMessageId: `${demoMessageId}@demo.local`,
       draftStatus: "sent",
       latestSnippet: "Demo mode. No email was actually sent.",
       outcomeLabel: "Sent (demo)",
@@ -378,10 +415,30 @@ export async function sendOutreachEmail(leadId: string) {
     },
   });
 
+  const gmailMessageId = response.data.id ?? null;
   const nextThreadId = response.data.threadId ?? draft.gmailThreadId ?? draft.id;
+  let rfcMessageId: string | null = null;
+
+  if (gmailMessageId) {
+    try {
+      const sent = await gmail.users.messages.get({
+        userId: "me",
+        id: gmailMessageId,
+        format: "metadata",
+        metadataHeaders: ["Message-ID"],
+      });
+      const rawId = parseHeader(sent.data.payload?.headers, "Message-ID");
+      rfcMessageId = rawId ? normalizeMessageId(rawId) : null;
+    } catch {
+      // Matching can still fall back to email+subject without the RFC id.
+    }
+  }
+
   const thread: OutreachThread = {
     ...draft,
     gmailThreadId: nextThreadId,
+    gmailMessageId,
+    rfcMessageId,
     gmailThreadUrl: threadUrl(nextThreadId),
     draftStatus: "sent",
     latestSnippet: "Message sent through Gmail.",
@@ -637,35 +694,57 @@ export async function renewGmailWatch() {
   };
 }
 
-async function syncMessage(gmailThreadId: string, snippet: string, fromHeader: string | null, subject: string | null, internalDate?: string | null) {
-  const existing = await findThreadByGmailThreadId(gmailThreadId);
-  // Only process replies to threads we actually sent — ignore unrelated inbox mail.
-  if (!existing) {
-    return null;
+async function applyInboundReply(input: {
+  gmailMessageId: string;
+  gmailThreadId: string;
+  snippet: string;
+  fromHeader: string | null;
+  subject: string | null;
+  inReplyTo: string | null;
+  references: string | null;
+  internalDate?: string | null;
+}) {
+  const candidates = await listOutboundCandidates();
+  const match = resolveOutboundThread({
+    fromEmail: extractEmailAddress(input.fromHeader),
+    subject: input.subject,
+    inReplyTo: input.inReplyTo,
+    references: input.references,
+    gmailThreadId: input.gmailThreadId,
+    candidates,
+    ownEmail: env.authorizedGmailAddress,
+  });
+
+  if (!match) {
+    await markInboundSeen(input.gmailMessageId, null);
+    return { status: "unmatched" as const, thread: null };
   }
-  const companyName = existing.companyName;
-  const classification = await classifyReply(
+
+  const existing = await findThreadById(match.threadId);
+  if (!existing) {
+    await markInboundSeen(input.gmailMessageId, null);
+    return { status: "unmatched" as const, thread: null };
+  }
+
+  const classification = classifyReply(
     {
-      subject: subject ?? existing?.subject ?? "Inbox reply",
-      companyName,
+      subject: input.subject ?? existing.subject,
+      companyName: existing.companyName,
     },
-    snippet,
+    input.snippet,
   );
 
   const thread: OutreachThread = {
-    id: existing.id,
-    companyId: existing.companyId,
-    companyName,
-    gmailThreadId,
-    subject: existing.subject,
-    latestSnippet: snippet,
-    gmailThreadUrl: threadUrl(gmailThreadId),
+    ...existing,
+    gmailThreadId: input.gmailThreadId || existing.gmailThreadId,
+    gmailThreadUrl: threadUrl(input.gmailThreadId || existing.gmailThreadId),
+    lastInboundMessageId: input.gmailMessageId,
+    latestSnippet: input.snippet,
     bucket: classification.bucket,
     needsAttention: classification.bucket !== "no",
-    draftStatus: existing.draftStatus,
-    lastMessageAt: internalDate ? new Date(Number(internalDate)).toISOString() : new Date().toISOString(),
-    sentAt: existing.sentAt,
-    draftBody: existing.draftBody,
+    lastMessageAt: input.internalDate
+      ? new Date(Number(input.internalDate)).toISOString()
+      : new Date().toISOString(),
     lastReplySummary: classification.summary,
     outcomeLabel:
       classification.bucket === "yes"
@@ -678,15 +757,118 @@ async function syncMessage(gmailThreadId: string, snippet: string, fromHeader: s
   };
 
   await upsertThread(thread);
+  await updateLeadStatus(existing.companyId, "replied", thread.id);
+  await markInboundSeen(input.gmailMessageId, thread.id);
   await appendActivity({
     type: "reply_received",
-    title: `${companyName} replied`,
-    detail: classification.summary,
+    title: `${existing.companyName} replied`,
+    detail: `${classification.summary} (match: ${match.reason})`,
     occurredAt: new Date().toISOString(),
-    companyName,
+    companyName: existing.companyName,
   });
 
-  return thread;
+  return { status: "matched" as const, thread };
+}
+
+/**
+ * A bounce arrives from a daemon address, not the contact, so it never carries a
+ * useful In-Reply-To. The dead recipient's address is only findable in the DSN's
+ * plain-language body, so this is the one path that needs a full (not metadata-only)
+ * message fetch. Marks the lead invalid rather than "replied" so it's never re-sent
+ * to but doesn't read as a real reply.
+ */
+async function applyBounce(gmail: GmailClient, messageId: string, subject: string | null) {
+  const full = await gmail.users.messages.get({ userId: "me", id: messageId, format: "full" });
+  const bodyText = extractBodyText(full.data.payload as MessagePart | undefined);
+  const failedAddress = extractBouncedRecipient(bodyText, env.authorizedGmailAddress);
+
+  const candidates = failedAddress ? await listOutboundCandidates() : [];
+  const match = failedAddress ? matchByFallback(failedAddress, null, candidates) : null;
+  const existing = match ? await findThreadById(match.threadId) : null;
+
+  if (!existing) {
+    await markInboundSeen(messageId, null);
+    return { status: "unmatched" as const };
+  }
+
+  const thread: OutreachThread = {
+    ...existing,
+    lastInboundMessageId: messageId,
+    bucket: "bounced",
+    needsAttention: false,
+    latestSnippet: failedAddress ? `Bounced: ${failedAddress} does not exist.` : "Bounced: delivery failed.",
+    lastMessageAt: new Date().toISOString(),
+    lastReplySummary: "Address does not exist. Marked invalid so it's never cold-emailed again.",
+    outcomeLabel: "Non-deliverable address",
+  };
+
+  await upsertThread(thread);
+  await updateLeadStatus(existing.companyId, "invalid", thread.id);
+  await markInboundSeen(messageId, thread.id);
+  await appendActivity({
+    type: "invalid_address",
+    title: `${existing.companyName} address bounced`,
+    detail: subject ?? "Delivery failed",
+    occurredAt: new Date().toISOString(),
+    companyName: existing.companyName,
+  });
+
+  return { status: "bounced" as const, thread };
+}
+
+type GmailClient = NonNullable<Awaited<ReturnType<typeof getGmailClient>>>;
+
+async function ingestGmailMessage(gmail: GmailClient, messageId: string, threadId: string) {
+  // Check before spending a Gmail API call: most of what history/inbox sampling
+  // hands back on a repeat sync is stuff already processed last time.
+  if (await hasSeenInbound(messageId)) {
+    return { status: "duplicate" as const };
+  }
+
+  const details = await gmail.users.messages.get({
+    userId: "me",
+    id: messageId,
+    format: "metadata",
+    metadataHeaders: ["From", "Subject", "In-Reply-To", "References", "Message-ID"],
+  });
+
+  const fromHeader = parseHeader(details.data.payload?.headers, "From");
+  const fromEmail = extractEmailAddress(fromHeader);
+  const subject = parseHeader(details.data.payload?.headers, "Subject");
+
+  if (fromEmail && fromEmail === env.authorizedGmailAddress?.trim().toLowerCase()) {
+    // A message from Saarth in a known thread is either the original cold email
+    // (already accounted for as thread.gmailMessageId) or a follow-up he sent from
+    // Gmail itself. Only the latter counts as "responded" — see needsResponse().
+    const candidates = await listOutboundCandidates();
+    const match = matchByGmailThreadId(threadId, candidates);
+    if (match) {
+      const existing = await findThreadById(match.threadId);
+      if (existing && existing.gmailMessageId !== messageId) {
+        const respondedAt = details.data.internalDate
+          ? new Date(Number(details.data.internalDate)).toISOString()
+          : new Date().toISOString();
+        await markThreadResponded(existing.id, respondedAt);
+      }
+    }
+    await markInboundSeen(messageId, match?.threadId ?? null);
+    return { status: "self" as const };
+  }
+
+  if (isBounceMessage({ fromEmail, subject })) {
+    return applyBounce(gmail, messageId, subject);
+  }
+
+  return applyInboundReply({
+    gmailMessageId: messageId,
+    gmailThreadId: threadId,
+    snippet: details.data.snippet ? decodeHtmlEntities(details.data.snippet) : "New reply received.",
+    fromHeader,
+    subject,
+    inReplyTo: parseHeader(details.data.payload?.headers, "In-Reply-To"),
+    references: parseHeader(details.data.payload?.headers, "References"),
+    internalDate: details.data.internalDate,
+  });
 }
 
 export async function syncInboxReplies(historyId?: string | null) {
@@ -694,6 +876,10 @@ export async function syncInboxReplies(historyId?: string | null) {
     return {
       mode: "demo" as const,
       synced: 0,
+      matched: 0,
+      unmatched: 0,
+      duplicates: 0,
+      bounced: 0,
     };
   }
 
@@ -704,106 +890,102 @@ export async function syncInboxReplies(historyId?: string | null) {
     return {
       mode: "demo" as const,
       synced: 0,
+      matched: 0,
+      unmatched: 0,
+      duplicates: 0,
+      bounced: 0,
     };
   }
 
   let synced = 0;
+  let matched = 0;
+  let unmatched = 0;
+  let duplicates = 0;
+  let bounced = 0;
+  const startHistoryId = historyId ?? integration.historyId ?? undefined;
+  let newestHistoryId = startHistoryId;
 
   try {
-    if (historyId || integration.historyId) {
-      const response = await gmail.users.history.list({
-        userId: "me",
-        startHistoryId: historyId ?? integration.historyId ?? undefined,
-        historyTypes: ["messageAdded"],
-        maxResults: 20,
-      });
+    if (startHistoryId) {
+      let pageToken: string | undefined;
+      do {
+        const response = await gmail.users.history.list({
+          userId: "me",
+          startHistoryId,
+          historyTypes: ["messageAdded"],
+          maxResults: 100,
+          pageToken,
+        });
 
-      for (const history of response.data.history ?? []) {
-        for (const entry of history.messagesAdded ?? []) {
-          const message = entry.message;
-          if (!message?.id || !message.threadId) {
-            continue;
+        for (const history of response.data.history ?? []) {
+          for (const entry of history.messagesAdded ?? []) {
+            const message = entry.message;
+            if (!message?.id || !message.threadId) continue;
+
+            const result = await ingestGmailMessage(gmail, message.id, message.threadId);
+            synced += 1;
+            if (result.status === "matched") matched += 1;
+            else if (result.status === "unmatched") unmatched += 1;
+            else if (result.status === "duplicate") duplicates += 1;
+            else if (result.status === "bounced") bounced += 1;
           }
-
-          const details = await gmail.users.messages.get({
-            userId: "me",
-            id: message.id,
-            format: "metadata",
-            metadataHeaders: ["From", "Subject"],
-          });
-
-          const fromHeader = parseHeader(details.data.payload?.headers, "From");
-          const fromEmail = extractEmailAddress(fromHeader);
-          if (fromEmail === env.authorizedGmailAddress) {
-            continue;
-          }
-
-          await syncMessage(
-            message.threadId,
-            details.data.snippet ?? "New reply received.",
-            fromHeader,
-            parseHeader(details.data.payload?.headers, "Subject"),
-            details.data.internalDate,
-          );
-          synced += 1;
         }
-      }
+
+        if (response.data.historyId) {
+          newestHistoryId = response.data.historyId;
+        }
+        pageToken = response.data.nextPageToken ?? undefined;
+      } while (pageToken);
 
       await saveIntegrationState({
-        historyId: response.data.historyId ?? integration.historyId,
+        historyId: newestHistoryId ?? integration.historyId,
         lastSyncedAt: new Date().toISOString(),
       });
 
       return {
         mode: "live" as const,
         synced,
+        matched,
+        unmatched,
+        duplicates,
+        bounced,
       };
     }
   } catch {
-    // Fall through to inbox sampling.
+    // Fall through to inbox sampling when history id is stale/expired.
   }
 
+  // No labelIds: a filter can send a bounce straight to Trash before it ever
+  // touches the Inbox, and this cold-start fallback needs to see it anyway.
   const inbox = await gmail.users.messages.list({
     userId: "me",
-    labelIds: ["INBOX"],
-    maxResults: 10,
+    q: "in:anywhere",
+    maxResults: 50,
   });
 
   for (const message of inbox.data.messages ?? []) {
-    if (!message.id || !message.threadId) {
-      continue;
-    }
-
-    const details = await gmail.users.messages.get({
-      userId: "me",
-      id: message.id,
-      format: "metadata",
-      metadataHeaders: ["From", "Subject"],
-    });
-
-    const fromHeader = parseHeader(details.data.payload?.headers, "From");
-    const fromEmail = extractEmailAddress(fromHeader);
-    if (fromEmail === env.authorizedGmailAddress) {
-      continue;
-    }
-
-    await syncMessage(
-      message.threadId,
-      details.data.snippet ?? "New reply received.",
-      fromHeader,
-      parseHeader(details.data.payload?.headers, "Subject"),
-      details.data.internalDate,
-    );
+    if (!message.id || !message.threadId) continue;
+    const result = await ingestGmailMessage(gmail, message.id, message.threadId);
     synced += 1;
+    if (result.status === "matched") matched += 1;
+    else if (result.status === "unmatched") unmatched += 1;
+    else if (result.status === "duplicate") duplicates += 1;
+    else if (result.status === "bounced") bounced += 1;
   }
 
+  const profile = await gmail.users.getProfile({ userId: "me" });
   await saveIntegrationState({
+    historyId: profile.data.historyId ?? integration.historyId,
     lastSyncedAt: new Date().toISOString(),
   });
 
   return {
     mode: "live" as const,
     synced,
+    matched,
+    unmatched,
+    duplicates,
+    bounced,
   };
 }
 
@@ -818,9 +1000,7 @@ export async function backfillReplies() {
   }
 
   const threads = await listThreads();
-  const candidates = threads.filter(
-    (t) => t.draftStatus === "sent" && t.gmailThreadId && t.latestSnippet === "Message sent through Gmail.",
-  );
+  const candidates = threads.filter((t) => t.sentAt && t.gmailThreadId);
 
   let checked = 0;
   let found = 0;
@@ -831,34 +1011,44 @@ export async function backfillReplies() {
         userId: "me",
         id: thread.gmailThreadId!,
         format: "metadata",
-        metadataHeaders: ["From", "Subject"],
+        metadataHeaders: ["From", "Subject", "In-Reply-To", "References", "Message-ID"],
       });
 
-      const messages = gmailThread.data.messages ?? [];
-      // Find the most recent message not sent by us
-      const reply = [...messages].reverse().find((msg) => {
-        const from = parseHeader(msg.payload?.headers, "From");
-        const fromEmail = extractEmailAddress(from);
-        return fromEmail !== env.authorizedGmailAddress;
-      });
-
-      checked++;
-
-      if (reply) {
-        const from = parseHeader(reply.payload?.headers, "From");
-        const subject = parseHeader(reply.payload?.headers, "Subject");
-        await syncMessage(
-          thread.gmailThreadId!,
-          reply.snippet ?? "Reply received.",
-          from,
-          subject,
-          reply.internalDate,
-        );
-        found++;
+      // ingestGmailMessage already branches on self vs. bounce vs. reply, and
+      // hasSeenInbound makes an already-processed message a cheap no-op — so just
+      // feed it every message in the thread rather than trying to guess which one
+      // matters. Picking only "the newest message not from Saarth" used to miss his
+      // own follow-ups entirely, since that filter excluded them by definition.
+      checked += 1;
+      for (const msg of gmailThread.data.messages ?? []) {
+        if (!msg.id) continue;
+        const result = await ingestGmailMessage(gmail, msg.id, thread.gmailThreadId!);
+        if (result.status === "matched" || result.status === "bounced") found += 1;
       }
     } catch {
       // Skip threads that can't be fetched (deleted, permission issues, etc.)
     }
+  }
+
+  // A bounce almost never lands in the original sent thread: Gmail gives the
+  // failure notice its own thread, so the per-thread pass above can't see it.
+  // Search the whole mailbox instead, Trash and Spam included, since a filter
+  // can route mailer-daemon mail straight there before it ever reaches Inbox.
+  try {
+    const bounceSearch = await gmail.users.messages.list({
+      userId: "me",
+      q: "in:anywhere (from:mailer-daemon OR from:postmaster) newer_than:30d",
+      maxResults: 50,
+    });
+
+    for (const message of bounceSearch.data.messages ?? []) {
+      if (!message.id) continue;
+      checked += 1;
+      const result = await ingestGmailMessage(gmail, message.id, message.threadId ?? message.id);
+      if (result.status === "bounced") found += 1;
+    }
+  } catch {
+    // Search unavailable; the per-thread pass above still ran.
   }
 
   await saveIntegrationState({ lastSyncedAt: new Date().toISOString() });

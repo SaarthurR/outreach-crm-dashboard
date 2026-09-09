@@ -58,6 +58,11 @@ export const outreachThreads = sqliteTable("outreach_threads", {
   companyId: text("company_id").notNull(),
   companyName: text("company_name").notNull(),
   gmailThreadId: text("gmail_thread_id"),
+  gmailMessageId: text("gmail_message_id"),
+  rfcMessageId: text("rfc_message_id"),
+  lastInboundMessageId: text("last_inbound_message_id"),
+  respondedAt: text("responded_at"),
+  starred: integer("starred", { mode: "boolean" }).notNull().default(false),
   subject: text("subject").notNull(),
   latestSnippet: text("latest_snippet").notNull(),
   gmailThreadUrl: text("gmail_thread_url"),
@@ -70,6 +75,12 @@ export const outreachThreads = sqliteTable("outreach_threads", {
   lastReplySummary: text("last_reply_summary").notNull(),
   outcomeLabel: text("outcome_label").notNull(),
   updatedAt: text("updated_at").notNull(),
+});
+
+export const inboundSeen = sqliteTable("inbound_seen", {
+  gmailMessageId: text("gmail_message_id").primaryKey(),
+  threadId: text("thread_id"),
+  seenAt: text("seen_at").notNull(),
 });
 
 export const activityEvents = sqliteTable("activity_events", {

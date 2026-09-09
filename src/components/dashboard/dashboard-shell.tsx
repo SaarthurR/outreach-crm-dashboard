@@ -20,8 +20,7 @@ import {
   Send,
   Settings2,
   ShieldMinus,
-  Sparkles,
-  WandSparkles,
+  Upload,
   FlaskConical,
 } from "lucide-react";
 
@@ -34,6 +33,7 @@ import {
   getUnsentLeads,
   isLeadOptedOut,
   isLeadSendable,
+  needsResponse,
 } from "@/lib/outreach";
 import { getLeadDraftPreview } from "@/lib/draft-preview";
 import type { DashboardData, Lead, NavView, OutreachThread } from "@/lib/types";
@@ -65,29 +65,25 @@ const navIcons: Record<NavView, typeof Mail> = {
 const statCards = [
   {
     id: "unsent",
-    label: "Public emails found",
-    description: "Companies still sitting in the unsent queue.",
+    label: "In queue",
     icon: Building2,
     valueKey: "unsentLeads",
   },
   {
     id: "ready",
-    label: "Ready to send",
-    description: "Companies that can go out right now.",
-    icon: Sparkles,
+    label: "Ready",
+    icon: MailCheck,
     valueKey: "sendableLeads",
   },
   {
     id: "opted-out",
     label: "Opted out",
-    description: "Companies you explicitly removed from sending.",
     icon: ShieldMinus,
     valueKey: "optedOut",
   },
   {
     id: "sent",
     label: "Sent",
-    description: "Threads already delivered from this workspace.",
     icon: Send,
     valueKey: "emailsSent",
   },
@@ -120,6 +116,7 @@ async function readDashboard() {
 export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
   const [dashboard, setDashboard] = useState(data);
   const [settingsDraft, setSettingsDraft] = useState(() => toSettingsDraft(data.settings));
+  const [activeView, setActiveView] = useState<NavView>("unsent");
   const [leadQuery, setLeadQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [testAddress, setTestAddress] = useState("saanvi.g126@gmail.com");
@@ -159,12 +156,25 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
   const eligibleLeadIds = getUnsentLeads(dashboard.leads, dashboard.threads)
     .filter((lead) => isLeadSendable(lead, threadMap.get(lead.id)))
     .map((lead) => lead.id);
+  // Matches the Inbox tab's "Replies" section: things Saarth still needs to answer.
+  // A starred thread is being tracked by hand in its own section, so it's excluded
+  // here the same way it's excluded from Replies there.
+  const replyCount = getSentThreads(dashboard.threads).filter(
+    (thread) => needsResponse(thread) && !thread.starred,
+  ).length;
   const lastSyncedLabel =
     dashboard.integration.connected && dashboard.integration.lastSyncedAt
       ? `Last checked ${formatDistanceToNow(new Date(dashboard.integration.lastSyncedAt), {
           addSuffix: true,
         })}`
       : "Demo mode only. Connect Gmail before live sending.";
+
+  function switchView(view: NavView) {
+    setActiveView(view);
+    setLeadQuery("");
+    setExpandedLeadId(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   async function refreshDashboard(message?: string) {
     const next = await readDashboard();
@@ -218,29 +228,69 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
     });
   }
 
-  function discoverLeads() {
+  function importCsv(file: File) {
     runAction(async () => {
-      const response = await fetch("/api/discovery", {
+      const form = new FormData();
+      form.set("file", file);
+
+      const response = await fetch("/api/import", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ limit: 250 }),
+        body: form,
       });
       const payload = (await response.json()) as {
         ok: boolean;
-        discoveredCount?: number;
+        importedCount?: number;
         draftedCount?: number;
         error?: string;
       };
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? "Public email discovery did not finish cleanly.");
+        throw new Error(payload.error ?? "CSV import did not finish cleanly.");
       }
 
       await refreshDashboard(
-        `Added ${payload.discoveredCount ?? 0} public contacts and prepared ${payload.draftedCount ?? 0} drafts. Nothing was sent.`,
+        `Imported ${payload.importedCount ?? 0} contacts and prepared ${payload.draftedCount ?? 0} drafts. Nothing was sent.`,
       );
+    });
+  }
+
+  function toggleStar(threadId: string, starred: boolean) {
+    runAction(async () => {
+      const response = await fetch(`/api/threads/${threadId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ starred }),
+      });
+      const payload = (await response.json()) as { ok: boolean; error?: string };
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Could not update the star.");
+      }
+
+      await refreshDashboard();
+    });
+  }
+
+  function syncReplies() {
+    runAction(async () => {
+      const response = await fetch("/api/sync", { method: "POST" });
+      const payload = (await response.json()) as {
+        ok: boolean;
+        synced?: number;
+        mode?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Inbox sync failed.");
+      }
+
+      const message =
+        payload.mode === "demo"
+          ? "Demo mode — connect Gmail to sync real replies."
+          : `Synced ${payload.synced ?? 0} new ${payload.synced === 1 ? "message" : "messages"}.`;
+
+      await refreshDashboard(message);
     });
   }
 
@@ -428,98 +478,108 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[color:var(--canvas)] text-[color:var(--ink)]">
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-4 sm:px-6 lg:flex-row lg:px-8">
-        <aside className="lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:w-[360px] lg:self-start">
-          <div className="flex h-full flex-col rounded-[32px] border border-black/6 bg-[color:var(--panel)] p-5 shadow-[0_20px_60px_rgba(17,60,57,0.08)]">
-            <div className="flex items-center justify-between gap-3 border-b border-black/6 pb-5">
+    <div className="min-h-[100dvh] bg-[color:var(--canvas)] text-[color:var(--ink)]">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 lg:flex-row lg:gap-6 lg:px-8">
+        <aside className="lg:sticky lg:top-5 lg:h-[calc(100dvh-2.5rem)] lg:w-[320px] lg:shrink-0 lg:self-start">
+          <div className="surface flex h-full flex-col p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-3 border-b border-[color:var(--border)] pb-4">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.26em] text-[color:var(--muted-ink)]">
-                  Outreach desk
-                </p>
-                <h1 className="mt-1.5 font-heading text-xl tracking-[-0.03em]">
+                <h1 className="font-heading text-lg text-[color:var(--ink)]">
                   Internship CRM
                 </h1>
+                <p className="mt-1 text-xs text-[color:var(--muted-ink)]">
+                  One Gmail. Upload, send, track replies.
+                </p>
               </div>
-              <div className="rounded-2xl bg-[color:var(--accent-soft)] p-2.5 text-[color:var(--accent-strong)]">
-                <PanelsTopLeft className="h-4 w-4" />
+              <div className="rounded-[var(--radius-sm)] bg-[color:var(--accent-soft)] p-2 text-[color:var(--accent-strong)]">
+                <PanelsTopLeft className="h-4 w-4" strokeWidth={1.75} />
               </div>
             </div>
 
-            <nav aria-label="Dashboard sections" className="mt-4 space-y-1">
+            <nav aria-label="Dashboard sections" className="mt-3 space-y-0.5">
               {NAV_ITEMS.map((item) => {
                 const Icon = navIcons[item.id];
                 const value =
                   item.id === "unsent"
                     ? dashboard.stats.unsentLeads
-                    : dashboard.stats.emailsSent;
+                    : item.id === "sent"
+                      ? dashboard.stats.emailsSent
+                      : replyCount;
+                const selected = activeView === item.id;
 
                 return (
-                  <a
+                  <button
                     key={item.id}
-                    className="flex min-h-11 cursor-pointer items-center justify-between gap-4 rounded-2xl border border-transparent px-3 py-2.5 transition hover:border-black/6 hover:bg-[color:var(--panel-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
-                    href={`#${item.id}`}
+                    aria-current={selected ? "page" : undefined}
+                    className={`flex min-h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-sm)] px-2.5 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)] ${
+                      selected
+                        ? "bg-[color:var(--accent-soft)] text-[color:var(--accent-deep)]"
+                        : "hover:bg-[color:var(--panel-muted)]"
+                    }`}
+                    onClick={() => switchView(item.id)}
+                    type="button"
                   >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="rounded-xl bg-[color:var(--panel-muted)] p-2 text-[color:var(--accent-strong)]">
-                        <Icon className="h-4 w-4" />
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Icon
+                        className={`h-4 w-4 ${selected ? "text-[color:var(--accent-strong)]" : "text-[color:var(--muted-ink)]"}`}
+                        strokeWidth={1.75}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">{item.label}</p>
+                        <p className="truncate text-[11px] text-[color:var(--muted-ink)]">{item.helper}</p>
                       </div>
-                      <p className="text-sm font-semibold">{item.label}</p>
                     </div>
-                    <span className="rounded-full bg-[color:var(--panel-muted)] px-2.5 py-0.5 font-mono text-[11px] font-medium text-[color:var(--muted-ink)]">
-                      {String(value).padStart(2, "0")}
+                    <span
+                      className={`rounded-full px-2 py-0.5 font-mono text-[11px] tabular-nums ${
+                        selected
+                          ? "bg-white/80 text-[color:var(--accent-deep)]"
+                          : "bg-[color:var(--panel-muted)] text-[color:var(--muted-ink)]"
+                      }`}
+                    >
+                      {value}
                     </span>
-                  </a>
+                  </button>
                 );
               })}
             </nav>
 
-            <div className="mt-4 rounded-[28px] bg-[color:var(--panel-muted)] p-4">
+            <div className="surface-quiet mt-3 p-3.5">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[color:var(--muted-ink)]">
-                    Send status
-                  </p>
-                  <p className="mt-1.5 text-sm font-semibold">
-                    {dashboard.integration.mode === "live"
-                      ? "Live Gmail connected"
-                      : "Safe demo workspace"}
-                  </p>
-                </div>
+                <p className="text-sm font-medium">
+                  {dashboard.integration.mode === "live"
+                    ? "Gmail connected"
+                    : "Demo mode"}
+                </p>
                 <span
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
                     dashboard.integration.mode === "live"
-                      ? "bg-emerald-100 text-emerald-800"
-                      : "bg-amber-100 text-amber-800"
+                      ? "bg-emerald-50 text-emerald-800"
+                      : "bg-amber-50 text-amber-900"
                   }`}
                 >
                   {dashboard.integration.mode}
                 </span>
               </div>
-              <p className="mt-2.5 text-xs leading-5 text-[color:var(--muted-ink)]">
+              <p className="mt-1.5 text-xs leading-5 text-[color:var(--muted-ink)]">
                 {dashboard.integration.connected
-                  ? `Tied to ${dashboard.integration.emailAddress ?? "your Gmail account"}.`
-                  : "Local history only—connect Gmail before live sending."}
+                  ? dashboard.integration.emailAddress ?? "Connected account"
+                  : "Connect Gmail before live sending."}
               </p>
-              <p className="mt-2 text-xs font-medium text-[color:var(--accent-strong)]">
-                {lastSyncedLabel}
-              </p>
+              <p className="mt-1.5 text-xs text-[color:var(--muted-ink)]">{lastSyncedLabel}</p>
             </div>
 
             <section
               aria-labelledby="settings-card-title"
-              className="mt-4 rounded-[28px] bg-[color:var(--ink)] p-5 text-[color:var(--panel)] lg:mt-auto"
+              className="mt-3 rounded-[var(--radius)] bg-[color:var(--ink)] p-4 text-[color:var(--panel)] lg:mt-auto"
             >
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/55">
-                    Sender profile
-                  </p>
-                  <h2 id="settings-card-title" className="mt-1.5 font-heading text-lg leading-tight">
+                  <h2 id="settings-card-title" className="font-heading text-base leading-tight">
                     {settingsDraft.fullName || "Your name"}
                   </h2>
+                  <p className="mt-1 text-xs text-white/60">Sender profile</p>
                 </div>
-                <Settings2 className="mt-0.5 h-4 w-4 shrink-0 text-white/60" />
+                <Settings2 className="mt-0.5 h-4 w-4 shrink-0 text-white/50" strokeWidth={1.75} />
               </div>
 
               <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/65">
@@ -690,64 +750,73 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
         </aside>
 
         <main className="min-w-0 flex-1">
-          <div className="space-y-6">
-            <section className="rounded-[32px] border border-black/6 bg-[color:var(--panel)] p-6 shadow-[0_18px_50px_rgba(17,60,57,0.07)] sm:p-7">
-              <p className="font-mono text-[10px] uppercase tracking-[0.26em] text-[color:var(--muted-ink)]">
-                Internship outreach
-              </p>
-              <h2 className="mt-3 font-heading text-3xl leading-tight tracking-[-0.04em] sm:text-4xl">
-                Find company emails.<br className="hidden sm:block" /> Send clean outreach.
+          <div className="space-y-5">
+            <section className="surface p-5 sm:p-6">
+              <h2 className="font-heading text-2xl leading-tight text-[color:var(--ink)] sm:text-3xl">
+                Upload a list. Send and track replies.
               </h2>
-              <p className="mt-3 max-w-xl text-base leading-7 text-[color:var(--muted-ink)]">
-                Discover public inboxes, prep drafts automatically, and fire the clean list with one click. Nothing sends until you say so.
+              <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--muted-ink)] sm:text-base sm:leading-7">
+                Import a CSV, send from your Gmail account, and see replies in one place. Nothing goes out until you click send.
               </p>
 
-              <div className="mt-5 flex flex-wrap items-center gap-2.5">
-                <button
-                  className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full bg-[color:var(--accent-strong)] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[color:var(--accent-deep)] disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={isPending}
-                  onClick={discoverLeads}
-                  type="button"
-                >
+              <div className="mt-5 flex flex-wrap items-center gap-2">
+                <label className="btn-primary">
                   {isPending ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" />
                   ) : (
-                    <WandSparkles className="h-4 w-4" />
+                    <Upload className="h-4 w-4" strokeWidth={1.75} />
                   )}
-                  Find 250 AI startups
-                </button>
+                  Import CSV
+                  <input
+                    accept=".csv,text/csv"
+                    className="sr-only"
+                    disabled={isPending}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) importCsv(file);
+                      event.target.value = "";
+                    }}
+                    type="file"
+                  />
+                </label>
 
                 <button
-                  className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-black/8 px-5 py-2.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--panel-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="btn-secondary"
                   disabled={isPending || eligibleLeadIds.length === 0 || remainingToday === 0}
                   onClick={sendAllEligibleLeads}
                   type="button"
                 >
-                  {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" strokeWidth={1.75} />}
                   Send {Math.min(remainingToday, eligibleLeadIds.length)} today
                 </button>
 
                 <button
-                  className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-black/8 px-5 py-2.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--panel-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="btn-secondary"
+                  disabled={isPending}
+                  onClick={syncReplies}
+                  type="button"
+                >
+                  {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" strokeWidth={1.75} />}
+                  Sync replies
+                </button>
+
+                <button
+                  className="btn-secondary"
                   disabled={isPending}
                   onClick={sendTestEmail}
                   type="button"
                 >
-                  {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
+                  {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" strokeWidth={1.75} />}
                   Send a test
                 </button>
 
-                <span className="rounded-full border border-black/8 px-3.5 py-2.5 text-xs text-[color:var(--muted-ink)]">
-                  {sentToday}/{dailyCap} sent today, {eligibleLeadIds.length} queued
+                <span className="rounded-full border border-[color:var(--border)] px-3 py-2 text-xs tabular-nums text-[color:var(--muted-ink)]">
+                  {sentToday}/{dailyCap} today · {eligibleLeadIds.length} queued
                 </span>
 
-                {dashboard.integration.connected ? (
-                  <span className="rounded-full border border-black/8 px-3.5 py-2.5 text-xs text-[color:var(--muted-ink)]">
-                    {lastSyncedLabel}
-                  </span>
-                ) : canConnectGmail ? (
+                {dashboard.integration.connected ? null : canConnectGmail ? (
                   <Link
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-black/8 px-5 py-2.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--panel-muted)]"
+                    className="btn-secondary"
                     href="/api/auth/signin/google"
                   >
                     Connect Gmail
@@ -758,14 +827,14 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
               {notice ? (
                 <div
                   aria-live="polite"
-                  className="mt-4 flex items-start gap-3 rounded-2xl bg-[color:var(--accent-soft)] px-4 py-3 text-sm text-[color:var(--accent-deep)]"
+                  className="mt-4 flex items-start gap-2.5 rounded-[var(--radius-sm)] bg-[color:var(--accent-soft)] px-3.5 py-3 text-sm text-[color:var(--accent-deep)]"
                 >
-                  <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                  <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.75} />
                   <span>{notice}</span>
                 </div>
               ) : null}
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {statCards.map((card) => {
                   const Icon = card.icon;
                   const value = dashboard.stats[card.valueKey];
@@ -773,19 +842,14 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
                   return (
                     <article
                       key={card.id}
-                      className="flex flex-col gap-3 rounded-[24px] bg-[color:var(--panel-muted)] p-4"
+                      className="surface-quiet flex flex-col gap-2 p-3.5"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <div className="rounded-xl bg-white p-1.5 text-[color:var(--accent-strong)] shadow-sm">
-                          <Icon className="h-3.5 w-3.5" />
-                        </div>
-                        <p className="text-xs font-semibold text-[color:var(--muted-ink)]">{card.label}</p>
+                      <div className="flex items-center gap-2">
+                        <Icon className="h-3.5 w-3.5 text-[color:var(--accent-strong)]" strokeWidth={1.75} />
+                        <p className="text-xs font-medium text-[color:var(--muted-ink)]">{card.label}</p>
                       </div>
-                      <p className="font-heading text-3xl tracking-[-0.04em]">
+                      <p className="font-heading text-2xl tabular-nums tracking-[-0.04em]">
                         {value}
-                      </p>
-                      <p className="text-xs leading-5 text-[color:var(--muted-ink)]">
-                        {card.description}
                       </p>
                     </article>
                   );
@@ -793,28 +857,27 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
               </div>
             </section>
 
+            {activeView === "unsent" ? (
             <section
-              id="unsent"
               aria-labelledby="unsent-title"
-              className="rounded-[32px] border border-black/6 bg-[color:var(--panel)] p-6"
+              className="surface p-5 sm:p-6"
             >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <SectionHeader
-                  description="Opt out anything you don't want, then hit Send eligible above."
-                  eyebrow="Unsent"
-                  title="Company email queue"
+                  description="Opt out anything you don't want, then hit Send today."
+                  title="Company queue"
                   titleId="unsent-title"
                 />
-                <span className="shrink-0 self-start rounded-full bg-[color:var(--panel-muted)] px-3 py-1.5 text-xs font-medium text-[color:var(--muted-ink)]">
+                <span className="shrink-0 self-start rounded-full bg-[color:var(--panel-muted)] px-2.5 py-1 text-xs tabular-nums text-[color:var(--muted-ink)] sm:self-auto">
                   {eligibleLeadIds.length} eligible
                 </span>
               </div>
 
-              <div className="mt-5">
+              <div className="mt-4">
                 <label className="relative block">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-ink)]" />
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-ink)]" strokeWidth={1.75} />
                   <input
-                    className="min-h-11 w-full rounded-full border border-black/8 bg-[color:var(--panel-muted)] px-11 text-sm outline-none placeholder:text-[color:var(--muted-ink)] focus:border-[color:var(--ring)]"
+                    className="input-field pl-10"
                     onChange={(event) => setLeadQuery(event.target.value)}
                     placeholder="Search company, email, source…"
                     value={leadQuery}
@@ -822,7 +885,7 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
                 </label>
               </div>
 
-              <div className="mt-4 space-y-2.5">
+              <div className="mt-3 space-y-2">
                 {unsentLeads.length ? (
                   unsentLeads.map((lead) => (
                     <LeadRow
@@ -839,55 +902,73 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
                   ))
                 ) : (
                   <EmptyState
-                    description="Try a broader search or run another discovery pass."
+                    description="Try a broader search or import another CSV."
                     title="No unsent companies match this view."
                   />
                 )}
               </div>
             </section>
+            ) : null}
 
+            {activeView === "sent" ? (
             <section
-              id="sent"
               aria-labelledby="sent-title"
-              className="rounded-[32px] border border-black/6 bg-[color:var(--panel)] p-6"
+              className="surface p-5 sm:p-6"
             >
-              <SectionHeader
-                description="Every email sent from this workspace, in order."
-                eyebrow="Sent"
-                title="Sent history"
-                titleId="sent-title"
-              />
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <SectionHeader
+                  description="Every email sent from this workspace."
+                  title="Sent"
+                  titleId="sent-title"
+                />
+                <span className="shrink-0 self-start rounded-full bg-[color:var(--panel-muted)] px-2.5 py-1 text-xs tabular-nums text-[color:var(--muted-ink)] sm:self-auto">
+                  {sentThreads.length}
+                </span>
+              </div>
 
-              <div className="mt-5 space-y-3">
+              <div className="mt-4">
+                <label className="relative block">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-ink)]" strokeWidth={1.75} />
+                  <input
+                    className="input-field pl-10"
+                    onChange={(event) => setLeadQuery(event.target.value)}
+                    placeholder="Search sent company or subject…"
+                    value={leadQuery}
+                  />
+                </label>
+              </div>
+
+              <div className="mt-3 space-y-2">
                 {sentThreads.length ? (
                   sentThreads.map((thread) => <SentItem key={thread.id} thread={thread} />)
                 ) : (
                   <EmptyState
-                    description="Once you send an email, the thread will show up here."
+                    description="Once you send an email, it shows up here."
                     title="Nothing sent yet."
                   />
                 )}
               </div>
             </section>
+            ) : null}
 
+            {activeView === "replies" ? (
             <section
-              id="replies"
               aria-labelledby="replies-title"
-              className="rounded-[32px] border border-black/6 bg-[color:var(--panel)] p-6"
+              className="surface p-5 sm:p-6"
             >
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex items-end justify-between gap-4">
                 <SectionHeader
-                  description="Replies bucketed by outcome. Use the brainstorm panel to draft your response."
-                  eyebrow="Replies"
-                  title="Inbox replies"
+                  description="Replies you need to answer first. Star the promising ones."
+                  title="Inbox"
                   titleId="replies-title"
                 />
                 <BackfillButton onDone={(msg) => runAction(() => refreshDashboard(msg))} />
               </div>
-              <div className="mt-5">
-                <RepliesTabs threads={getSentThreads(dashboard.threads)} />
+              <div className="mt-4">
+                <RepliesTabs onToggleStar={toggleStar} threads={getSentThreads(dashboard.threads)} />
               </div>
             </section>
+            ) : null}
           </div>
         </main>
       </div>
@@ -918,7 +999,7 @@ function BackfillButton({ onDone }: { onDone: (msg: string) => void }) {
 
   return (
     <button
-      className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-black/8 bg-[color:var(--panel-muted)] px-3 py-2 text-xs font-medium text-[color:var(--muted-ink)] transition hover:text-[color:var(--ink)] disabled:opacity-50"
+      className="btn-secondary !min-h-9 !px-3 !py-1.5 !text-xs"
       disabled={state === "running"}
       onClick={() => void run()}
       type="button"
@@ -926,7 +1007,7 @@ function BackfillButton({ onDone }: { onDone: (msg: string) => void }) {
       {state === "running" ? (
         <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
       ) : (
-        <RefreshCw className="h-3.5 w-3.5" />
+        <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.75} />
       )}
       {state === "running" ? "Scanning…" : state === "done" ? "Done" : "Scan past replies"}
     </button>
@@ -935,24 +1016,19 @@ function BackfillButton({ onDone }: { onDone: (msg: string) => void }) {
 
 function SectionHeader({
   titleId,
-  eyebrow,
   title,
   description,
 }: {
   titleId?: string;
-  eyebrow: string;
   title: string;
   description: string;
 }) {
   return (
     <header>
-      <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[color:var(--muted-ink)]">
-        {eyebrow}
-      </p>
-      <h2 id={titleId} className="mt-1.5 font-heading text-xl tracking-[-0.03em]">
+      <h2 id={titleId} className="font-heading text-lg text-[color:var(--ink)]">
         {title}
       </h2>
-      <p className="mt-1.5 text-sm leading-6 text-[color:var(--muted-ink)]">
+      <p className="mt-1 text-sm leading-6 text-[color:var(--muted-ink)]">
         {description}
       </p>
     </header>
@@ -985,81 +1061,81 @@ function LeadRow({
 
   return (
     <article
-      className={`rounded-[24px] border p-4 transition ${
+      className={`rounded-[var(--radius-sm)] border p-3.5 transition ${
         optedOut
-          ? "border-amber-200 bg-amber-50/80 opacity-60"
+          ? "border-amber-200/80 bg-amber-50/70 opacity-70"
           : sendable
-            ? "border-black/6 bg-white"
-            : "border-black/6 bg-[color:var(--panel-muted)]"
+            ? "border-[color:var(--border)] bg-white"
+            : "border-transparent bg-[color:var(--panel-muted)]"
       }`}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <button
-          className="min-w-0 flex-1 cursor-pointer rounded-2xl text-left transition hover:bg-black/[0.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
+          className="min-w-0 flex-1 cursor-pointer rounded-[var(--radius-sm)] text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
           onClick={() => onPreviewToggle(lead, thread)}
           type="button"
         >
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold">{lead.companyName}</p>
-            <span className="rounded-full bg-[color:var(--accent-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--accent-strong)]">
+            <span className="rounded-full bg-[color:var(--accent-soft)] px-2 py-0.5 text-[11px] font-medium text-[color:var(--accent-strong)]">
               {lead.companyType}
             </span>
-            <span className="rounded-full border border-black/8 px-2 py-0.5 text-[10px] text-[color:var(--muted-ink)]">
+            <span className="rounded-full border border-[color:var(--border)] px-2 py-0.5 text-[11px] tabular-nums text-[color:var(--muted-ink)]">
               {Math.round(lead.confidence * 100)}%
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-black/8 px-2 py-0.5 text-[10px] text-[color:var(--muted-ink)]">
+            <span className="inline-flex items-center gap-1 text-[11px] text-[color:var(--muted-ink)]">
               {previewPending ? (
                 <>
                   <LoaderCircle className="h-3 w-3 animate-spin" />
-                  Preparing preview
+                  Preparing
                 </>
               ) : expanded ? (
                 <>
-                  <ChevronUp className="h-3 w-3" />
-                  Hide preview
+                  <ChevronUp className="h-3 w-3" strokeWidth={1.75} />
+                  Hide
                 </>
               ) : (
                 <>
-                  <ChevronDown className="h-3 w-3" />
-                  Preview email
+                  <ChevronDown className="h-3 w-3" strokeWidth={1.75} />
+                  Preview
                 </>
               )}
             </span>
           </div>
 
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--muted-ink)]">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--muted-ink)]">
             <span className="font-mono">{lead.contactEmail}</span>
             <span>{lead.source}</span>
           </div>
 
           {lead.notes ? (
-            <p className="mt-2 text-xs leading-5 text-[color:var(--muted-ink)]">{lead.notes}</p>
+            <p className="mt-2 line-clamp-2 text-xs leading-5 text-[color:var(--muted-ink)]">{lead.notes}</p>
           ) : null}
         </button>
 
         <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end">
           <span
-            className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
               sendable
-                ? "bg-emerald-100 text-emerald-800"
+                ? "bg-emerald-50 text-emerald-800"
                 : optedOut
-                  ? "bg-amber-100 text-amber-900"
-                  : "bg-slate-200 text-slate-600"
+                  ? "bg-amber-50 text-amber-900"
+                  : "bg-[color:var(--panel-muted)] text-[color:var(--muted-ink)]"
             }`}
           >
             {reason}
           </span>
           <a
-            className="inline-flex min-h-9 items-center justify-center gap-1 rounded-full border border-black/8 px-3.5 text-xs font-semibold text-[color:var(--accent-strong)] hover:bg-[color:var(--panel-muted)] hover:text-[color:var(--ink)]"
+            className="inline-flex min-h-8 items-center justify-center gap-1 rounded-full border border-[color:var(--border)] px-3 text-xs font-medium text-[color:var(--accent-strong)] hover:bg-[color:var(--panel-muted)] hover:text-[color:var(--ink)]"
             href={lead.website}
             rel="noreferrer"
             target="_blank"
           >
-            Visit site
-            <ArrowUpRight className="h-3 w-3" />
+            Site
+            <ArrowUpRight className="h-3 w-3" strokeWidth={1.75} />
           </a>
           <button
-            className="inline-flex min-h-9 cursor-pointer items-center justify-center rounded-full border border-black/8 px-3.5 text-xs font-semibold text-[color:var(--ink)] hover:bg-[color:var(--panel-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-8 cursor-pointer items-center justify-center rounded-full border border-[color:var(--border)] px-3 text-xs font-medium text-[color:var(--ink)] hover:bg-[color:var(--panel-muted)] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={pending}
             onClick={() => onToggleOptOut(lead, !optedOut)}
             type="button"
@@ -1070,26 +1146,22 @@ function LeadRow({
       </div>
 
       {expanded ? (
-        <div className="mt-3 rounded-2xl border border-black/8 bg-[color:var(--panel-muted)] p-4">
+        <div className="mt-3 rounded-[var(--radius-sm)] border border-[color:var(--border)] bg-[color:var(--panel-muted)] p-3.5">
           {preview ? (
             <div className="space-y-3">
               <div className="space-y-1">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted-ink)]">
-                  Subject
-                </p>
+                <p className="text-[11px] font-medium text-[color:var(--muted-ink)]">Subject</p>
                 <p className="text-sm font-semibold text-[color:var(--ink)]">{preview.subject}</p>
               </div>
               <div className="space-y-1">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted-ink)]">
-                  Email preview
-                </p>
+                <p className="text-[11px] font-medium text-[color:var(--muted-ink)]">Email</p>
                 <p className="whitespace-pre-wrap text-sm leading-6 text-[color:var(--ink)]">
                   {preview.body}
                 </p>
               </div>
               <div className="pt-1">
                 <button
-                  className="inline-flex items-center gap-1.5 rounded-full border border-black/8 px-3 py-1.5 text-xs font-medium text-[color:var(--muted-ink)] hover:bg-white hover:text-[color:var(--ink)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--border)] bg-white px-3 py-1.5 text-xs font-medium text-[color:var(--muted-ink)] hover:text-[color:var(--ink)] disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={previewPending}
                   onClick={() => onRegenerate(lead)}
                   type="button"
@@ -1097,7 +1169,7 @@ function LeadRow({
                   {previewPending ? (
                     <LoaderCircle className="h-3 w-3 animate-spin" />
                   ) : (
-                    <RefreshCw className="h-3 w-3" />
+                    <RefreshCw className="h-3 w-3" strokeWidth={1.75} />
                   )}
                   Regenerate draft
                 </button>
@@ -1106,7 +1178,7 @@ function LeadRow({
           ) : (
             <div className="flex items-center gap-2 text-xs text-[color:var(--muted-ink)]">
               <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-              Preparing the exact draft for this company…
+              Preparing draft…
             </div>
           )}
         </div>
@@ -1117,38 +1189,31 @@ function LeadRow({
 
 function SentItem({ thread }: { thread: OutreachThread }) {
   return (
-    <article className="rounded-[24px] bg-[color:var(--panel-muted)] p-4">
+    <article className="surface-quiet p-3.5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">{thread.companyName}</p>
           <p className="mt-0.5 truncate text-xs text-[color:var(--muted-ink)]">{thread.subject}</p>
         </div>
-        <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--accent-strong)] shadow-sm">
+        <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[color:var(--accent-strong)] ring-1 ring-[color:var(--border)]">
           {thread.outcomeLabel}
         </span>
       </div>
-      <p className="mt-3 text-xs leading-5 text-[color:var(--muted-ink)]">{thread.latestSnippet}</p>
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-[color:var(--muted-ink)]">
+      <p className="mt-2.5 line-clamp-2 text-xs leading-5 text-[color:var(--muted-ink)]">{thread.latestSnippet}</p>
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[color:var(--muted-ink)]">
         <span suppressHydrationWarning>
-          Sent {thread.sentAt ? formatDistanceToNow(new Date(thread.sentAt), { addSuffix: true }) : "—"}
-        </span>
-        <span className="text-black/20">·</span>
-        <span suppressHydrationWarning>
-          Updated {formatDistanceToNow(new Date(thread.lastMessageAt), { addSuffix: true })}
+          Sent {thread.sentAt ? formatDistanceToNow(new Date(thread.sentAt), { addSuffix: true }) : "-"}
         </span>
         {thread.gmailThreadUrl ? (
-          <>
-            <span className="text-black/20">·</span>
-            <a
-              className="inline-flex items-center gap-1 font-medium text-[color:var(--accent-strong)] transition hover:text-[color:var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
-              href={thread.gmailThreadUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Open in Gmail
-              <ArrowUpRight className="h-3 w-3" />
-            </a>
-          </>
+          <a
+            className="inline-flex items-center gap-1 font-medium text-[color:var(--accent-strong)] hover:text-[color:var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
+            href={thread.gmailThreadUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Gmail
+            <ArrowUpRight className="h-3 w-3" strokeWidth={1.75} />
+          </a>
         ) : null}
       </div>
     </article>
@@ -1157,9 +1222,9 @@ function SentItem({ thread }: { thread: OutreachThread }) {
 
 function MetricChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/6 px-3 py-2.5">
-      <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/45">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-white">{value}</p>
+    <div className="rounded-[var(--radius-sm)] border border-white/10 bg-white/6 px-3 py-2">
+      <p className="text-[11px] text-white/50">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold text-white">{value}</p>
     </div>
   );
 }
@@ -1210,9 +1275,9 @@ function LabeledTextarea({
 
 function EmptyState({ title, description }: { title: string; description: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-black/10 px-4 py-10 text-center">
-      <p className="text-sm font-semibold text-[color:var(--ink)]">{title}</p>
-      <p className="mt-1.5 text-xs leading-5 text-[color:var(--muted-ink)]">{description}</p>
+    <div className="rounded-[var(--radius-sm)] border border-dashed border-[color:var(--border-strong)] px-4 py-10 text-center">
+      <p className="text-sm font-medium text-[color:var(--ink)]">{title}</p>
+      <p className="mt-1 text-xs leading-5 text-[color:var(--muted-ink)]">{description}</p>
     </div>
   );
 }

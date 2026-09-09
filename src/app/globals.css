@@ -1,17 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f4f1ea;
-  --foreground: #153633;
-  --canvas: #f4f1ea;
-  --panel: #fffdf8;
-  --panel-muted: #eef2ed;
-  --ink: #163633;
-  --muted-ink: #617975;
-  --accent-soft: #d9ece7;
-  --accent-strong: #1f6a63;
-  --accent-deep: #184f4a;
-  --ring: #2b847b;
+  /* Cool paper + one teal accent. Daily-app density, not craft-cream. */
+  --canvas: #f5f6f7;
+  --panel: #ffffff;
+  --panel-muted: #f0f2f4;
+  --ink: #15181c;
+  --muted-ink: #5e6772;
+  --accent-soft: #e4f3f0;
+  --accent-strong: #0f766e;
+  --accent-deep: #0b5f59;
+  --ring: #14b8a6;
+  --border: rgb(21 24 28 / 0.08);
+  --border-strong: rgb(21 24 28 / 0.12);
+  --shadow-soft: 0 1px 2px rgb(21 24 28 / 0.04), 0 12px 32px rgb(21 24 28 / 0.05);
+  --radius: 1rem;
+  --radius-sm: 0.75rem;
+  --radius-pill: 999px;
 }
 
 @theme inline {
@@ -31,35 +36,128 @@ html {
 }
 
 body {
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(97, 177, 165, 0.22), transparent 32%),
-    radial-gradient(circle at top right, rgba(250, 230, 197, 0.78), transparent 26%),
-    linear-gradient(180deg, #f7f4ec 0%, #f0ede5 100%);
+  min-height: 100dvh;
+  background: var(--canvas);
   color: var(--foreground);
-  font-family: var(--font-source-sans), sans-serif;
+  font-family: var(--font-source-sans), system-ui, sans-serif;
+  font-feature-settings: "ss01" on, "cv11" on;
+  -webkit-font-smoothing: antialiased;
 }
 
 a,
-button {
+button,
+label {
   transition:
-    color 150ms ease,
-    background-color 150ms ease,
-    border-color 150ms ease,
-    box-shadow 150ms ease,
-    transform 150ms ease;
+    color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 100ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 140ms ease;
+}
+
+button:active:not(:disabled),
+label:active:has(input:not(:disabled)) {
+  transform: scale(0.98);
 }
 
 ::selection {
-  background: rgba(43, 132, 123, 0.18);
+  background: rgb(15 118 110 / 0.16);
 }
 
 .font-heading {
-  font-family: var(--font-lexend), sans-serif;
+  font-family: var(--font-lexend), system-ui, sans-serif;
+  letter-spacing: -0.03em;
 }
 
 .font-mono {
-  font-family: var(--font-ibm-plex-mono), monospace;
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+}
+
+/* Shared surface primitives — keep components thin */
+.surface {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+}
+
+.surface-quiet {
+  border: 1px solid transparent;
+  background: var(--panel-muted);
+  border-radius: var(--radius-sm);
+}
+
+.btn-primary {
+  display: inline-flex;
+  min-height: 2.75rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-strong);
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--accent-deep);
+}
+
+.btn-primary:disabled,
+.btn-primary:has(:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  min-height: 2.75rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.btn-secondary:hover {
+  background: var(--panel-muted);
+}
+
+.btn-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.input-field {
+  min-height: 2.75rem;
+  width: 100%;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--panel-muted);
+  padding-inline: 1rem;
+  font-size: 0.875rem;
+  color: var(--ink);
+  outline: none;
+}
+
+.input-field:focus {
+  border-color: var(--ring);
+  background: var(--panel);
+  box-shadow: 0 0 0 3px rgb(20 184 166 / 0.18);
+}
+
+.input-field::placeholder {
+  color: var(--muted-ink);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -70,5 +168,10 @@ button {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+
+  button:active:not(:disabled),
+  label:active:has(input:not(:disabled)) {
+    transform: none;
   }
 }

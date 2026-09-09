@@ -40,7 +40,8 @@ Single-page dashboard (`src/app/page.tsx` → `src/components/dashboard/dashboar
 | `src/lib/types.ts` | All shared TypeScript interfaces and enums |
 | `src/lib/env.ts` | Env var accessors + `isLiveGmailConfigured()`, `isAiConfigured()` |
 | `src/lib/ai.ts` | Draft generation + reply classification; tries Groq first, falls back to OpenAI |
-| `src/lib/gmail.ts` | Gmail API: send, token refresh, history sync, Pub/Sub watch |
+| `src/lib/gmail.ts` | Gmail API: send (stores message ids), history sync, Pub/Sub watch |
+| `src/lib/reply-match.ts` | WarmStack-style In-Reply-To + email/subject fallback matching |
 | `src/lib/discovery.ts` | YC directory scraping + DuckDuckGo search for company contact emails |
 | `src/lib/draft-personalization.ts` | Multi-pass website scraping to enrich email drafts |
 | `src/lib/dashboard.ts` | `DashboardStats` computation (lead eligibility logic lives here) |

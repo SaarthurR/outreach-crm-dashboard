@@ -13,7 +13,7 @@ afterEach(() => {
 // Structure is Zach Lin's: credibility line, the specific thing about them tied back to
 // Saarth's own work, one small ask, friction removed.
 function assertDraftContract(draft: { subject: string; body: string }) {
-  assert.match(draft.subject, /^Interested in Learning More About Internship Opportunities at .+$/);
+  assert.equal(draft.subject, "Internship Inquiry");
   assert.match(draft.body, /^Hi\b/);
   // The template, followed exactly.
   assert.match(draft.body, /I hope you're doing well\. My name is Saarth Ranka, and I'm currently a freshman at Monta Vista High School in Cupertino\./);

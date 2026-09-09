@@ -5,8 +5,8 @@ import { buildDraftPersonalization } from "@/lib/draft-personalization";
 import { env } from "@/lib/env";
 import type { Lead, OutreachThread, ProfileSettings, ReplyBucket } from "@/lib/types";
 
-export function outreachSubject(companyName: string) {
-  return `Interested in Learning More About Internship Opportunities at ${companyName}`;
+export function outreachSubject() {
+  return "Internship Inquiry";
 }
 
 const CONTACT_PHONE = "+1 650 441 7661";
@@ -68,7 +68,7 @@ export async function generateOutreachDraft(lead: Lead, settings: ProfileSetting
   const personalization = await buildDraftPersonalization(lead);
 
   return {
-    subject: outreachSubject(leadCompanyName(lead)),
+    subject: outreachSubject(),
     body: buildOutreachBody(lead, settings, personalization.drawnTo),
     personalization: personalization.reason,
     followUpNote: `Follow up around ${addDays(new Date(), settings.followUpWindowDays).toDateString()}.`,

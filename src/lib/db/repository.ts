@@ -480,6 +480,10 @@ export async function upsertLeads(leads: Lead[]) {
         lastThreadId: lead.lastThreadId,
         updatedAt: nowIso(),
       })
+      // status, followUpDate and lastThreadId are deliberately left out of this
+      // update: they're workspace state (sent, replied, opted out, invalid),
+      // changed only through updateLeadStatus. Re-discovering or re-importing an
+      // already-known company must never reset it back to "new" and sendable.
       .onConflictDoUpdate({
         target: companies.id,
         set: {
@@ -493,10 +497,7 @@ export async function upsertLeads(leads: Lead[]) {
           contactType: lead.contactType,
           source: lead.source,
           confidence: lead.confidence,
-          status: lead.status,
-          followUpDate: lead.followUpDate,
           notes: lead.notes,
-          lastThreadId: lead.lastThreadId,
           updatedAt: nowIso(),
         },
       });

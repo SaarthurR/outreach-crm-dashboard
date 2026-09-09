@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { appendActivity, upsertLeads } from "@/lib/db/repository";
 import { discoverPublicLeads } from "@/lib/discovery";
 import { generateAndStoreDraftBatch } from "@/lib/gmail";
+import { isAlreadyWorkedThere } from "@/lib/outreach";
 import { ensureAuthorizedUser } from "@/lib/route-auth";
 
 export async function POST(request: Request) {
@@ -13,7 +14,10 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json().catch(() => ({}))) as { query?: string; limit?: number };
-    const discovered = await discoverPublicLeads(body.query, body.limit);
+    // Never let discovery re-add a company Saarth already interned at.
+    const discovered = (await discoverPublicLeads(body.query, body.limit)).filter(
+      (lead) => !isAlreadyWorkedThere(lead),
+    );
     const leads = await upsertLeads(discovered);
     const drafts = await generateAndStoreDraftBatch(discovered.map((lead) => lead.id));
 

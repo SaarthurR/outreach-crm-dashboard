@@ -18,6 +18,24 @@ export function isLeadInvalid(lead: Lead) {
   return lead.status === "invalid" || !lead.contactEmail;
 }
 
+// Companies Saarth actually interned at, per his own bio (CLAUDE.md). Cold-pitching
+// an employer he already worked for is the one send this app must never make, no
+// matter how many times discovery re-scrapes the YC directory and finds them again.
+// Matched by domain where known, else by a name substring — DeepAware doesn't have a
+// tracked domain yet, so name is the only reliable signal until it does.
+const ALREADY_WORKED_THERE: { domain?: string; nameIncludes?: string }[] = [
+  { domain: "frizzle.com", nameIncludes: "frizzle" },
+  { nameIncludes: "deepaware" },
+];
+
+export function isAlreadyWorkedThere(lead: Lead) {
+  const domain = lead.domain?.trim().toLowerCase() ?? "";
+  const name = lead.companyName?.trim().toLowerCase() ?? "";
+  return ALREADY_WORKED_THERE.some(
+    (rule) => (rule.domain && domain === rule.domain) || (rule.nameIncludes && name.includes(rule.nameIncludes)),
+  );
+}
+
 // A thread in any bucket other than needs_reply means a human (or a bounce) already
 // came back. Cold-emailing them again is the worst outcome this app can produce:
 // it re-pitches someone who said no, re-pitches a company he already worked at, or
@@ -82,7 +100,8 @@ export function isLeadSendable(lead: Lead, thread?: OutreachThread) {
     !isLeadSent(lead, thread) &&
     !hasReplied(thread) &&
     !isLeadOptedOut(lead) &&
-    !isLeadInvalid(lead)
+    !isLeadInvalid(lead) &&
+    !isAlreadyWorkedThere(lead)
   );
 }
 
@@ -168,6 +187,10 @@ export function getLeadEligibilityReason(lead: Lead, thread?: OutreachThread) {
 
   if (hasReplied(thread)) {
     return "Already replied, never cold-email again";
+  }
+
+  if (isAlreadyWorkedThere(lead)) {
+    return "Already interned here, never cold-email";
   }
 
   if (isLeadOptedOut(lead)) {

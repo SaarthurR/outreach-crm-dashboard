@@ -1,8 +1,29 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { hasReceivedReply, needsResponse } from "@/lib/outreach";
-import type { OutreachThread } from "@/lib/types";
+import { hasReceivedReply, isAlreadyWorkedThere, isLeadSendable, needsResponse } from "@/lib/outreach";
+import type { Lead, OutreachThread } from "@/lib/types";
+
+function lead(partial: Partial<Lead>): Lead {
+  return {
+    id: "l1",
+    companyName: "Acme",
+    website: "https://acme.example.com",
+    domain: "acme.example.com",
+    companyType: "Startup",
+    location: "",
+    contactEmail: "founders@acme.example.com",
+    contactName: null,
+    contactType: "general",
+    source: "test",
+    confidence: 0.9,
+    status: "new",
+    followUpDate: null,
+    notes: "",
+    lastThreadId: null,
+    ...partial,
+  };
+}
 
 function thread(partial: Partial<OutreachThread>): OutreachThread {
   return {
@@ -87,5 +108,26 @@ describe("needsResponse", () => {
 
   it("is always false for a bounce — there's no one to respond to", () => {
     assert.equal(needsResponse(thread({ bucket: "bounced" })), false);
+  });
+});
+
+describe("isAlreadyWorkedThere / isLeadSendable", () => {
+  it("blocks Frizzle by domain even under a different display name", () => {
+    assert.equal(isAlreadyWorkedThere(lead({ companyName: "Frizzle AI", domain: "frizzle.com" })), true);
+  });
+
+  it("blocks DeepAware by name even without a tracked domain", () => {
+    assert.equal(
+      isAlreadyWorkedThere(lead({ companyName: "DeepAware AI", domain: "deepaware-unknown.example" })),
+      true,
+    );
+  });
+
+  it("leaves an unrelated company sendable", () => {
+    assert.equal(isAlreadyWorkedThere(lead({ companyName: "Axiom Vision", domain: "axiomvision.ai" })), false);
+  });
+
+  it("keeps a former employer out of isLeadSendable even before anything is sent", () => {
+    assert.equal(isLeadSendable(lead({ companyName: "Frizzle", domain: "frizzle.com", status: "new" })), false);
   });
 });

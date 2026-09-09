@@ -481,7 +481,7 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
     <div className="min-h-[100dvh] bg-[color:var(--canvas)] text-[color:var(--ink)]">
       <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 lg:flex-row lg:gap-6 lg:px-8">
         <aside className="lg:sticky lg:top-5 lg:h-[calc(100dvh-2.5rem)] lg:w-[320px] lg:shrink-0 lg:self-start">
-          <div className="surface flex h-full flex-col p-4 sm:p-5">
+          <div className="surface flex h-full flex-col overflow-y-auto p-4 sm:p-5">
             <div className="flex items-center justify-between gap-3 border-b border-[color:var(--border)] pb-4">
               <div>
                 <h1 className="font-heading text-lg text-[color:var(--ink)]">

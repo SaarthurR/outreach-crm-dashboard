@@ -30,6 +30,7 @@ export function outreachSubject(companyName: string) {
 
 // Age comes from the date of birth so the email can never claim the wrong one.
 const CONTACT_PHONE = "+1 650 441 7661";
+const PERSONAL_WEBSITE = "saarth-site.vercel.app";
 
 const BIRTH_DATE = new Date("2012-04-12T00:00:00Z");
 
@@ -81,6 +82,7 @@ export function buildOutreachBody(lead: Lead, settings: ProfileSettings, drawnTo
       settings.fullName,
       env.authorizedGmailAddress,
       CONTACT_PHONE,
+      PERSONAL_WEBSITE,
     ]
       // Drop only a missing sign-off address. The empty strings between paragraphs
       // are the paragraph breaks, and the HTML part needs them.

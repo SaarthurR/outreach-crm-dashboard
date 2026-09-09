@@ -61,6 +61,9 @@ function buildHtmlBody(body: string) {
         if (/^\+?[\d ()-]{9,}$/.test(line.trim())) {
           return `<a href="tel:${line.replace(/[^+\d]/g, "")}">${safe}</a>`;
         }
+        if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(line.trim()) && !line.includes("@")) {
+          return `<a href="https://${line.trim()}">${safe}</a>`;
+        }
         return safe;
       });
       return `<p>${lines.join("<br>")}</p>`;

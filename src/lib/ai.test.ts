@@ -26,7 +26,7 @@ function assertDraftContract(draft: { subject: string; body: string }) {
   // Blank lines between paragraphs are what the HTML part turns into <p> blocks.
   // Without them the whole email renders as one wall of <br>.
   assert.equal(draft.body.split(/\n\s*\n/).length, 6, "expected 6 paragraph blocks");
-  assert.match(draft.body, /\+1 650 441 7661$/);
+  assert.match(draft.body, /\+1 650 441 7661\nsaarth-site\.vercel\.app$/);
   // The old line claimed every recipient does "meaningful work in this space",
   // which is nonsense on a list this varied.
   assert.doesNotMatch(draft.body, /meaningful work in this space/);

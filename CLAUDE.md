@@ -41,6 +41,7 @@ Single-page dashboard (`src/app/page.tsx` → `src/components/dashboard/dashboar
 | `src/lib/env.ts` | Env var accessors + `isLiveGmailConfigured()`, `isAiConfigured()` |
 | `src/lib/ai.ts` | Draft generation + reply classification; tries Groq first, falls back to OpenAI |
 | `src/lib/gmail.ts` | Gmail API: send (stores message ids), history sync, Pub/Sub watch |
+| `src/lib/blast.ts` | Recipient parsing for the Blast tab (separator-agnostic, dedupes) |
 | `src/lib/reply-match.ts` | WarmStack-style In-Reply-To + email/subject fallback matching |
 | `src/lib/discovery.ts` | YC directory scraping + DuckDuckGo search for company contact emails |
 | `src/lib/draft-personalization.ts` | Multi-pass website scraping to enrich email drafts |
@@ -54,6 +55,7 @@ Single-page dashboard (`src/app/page.tsx` → `src/components/dashboard/dashboar
 | `POST /api/discovery` | Discover new leads from YC/web |
 | `POST /api/drafts` | Generate AI draft for a lead |
 | `POST /api/send` | Send outreach email via Gmail |
+| `POST /api/blast` | Send one hand-written email to a pasted address list (no AI, no DB writes) |
 | `GET/POST /api/settings` | Read/write profile settings |
 | `GET /api/dashboard` | Full dashboard snapshot |
 | `PATCH /api/leads/[leadId]` | Update lead status or opt-out |

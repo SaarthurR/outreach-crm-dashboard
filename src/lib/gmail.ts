@@ -114,11 +114,11 @@ function getResumeAttachment() {
   return cachedAttachment;
 }
 
-function buildGmailMessage(to: string, subject: string, body: string) {
+function buildGmailMessage(to: string, subject: string, body: string, includeAttachment = true) {
   const boundary = `b_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
   const encodedSubject = `=?utf-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
 
-  const attachment = getResumeAttachment();
+  const attachment = includeAttachment ? getResumeAttachment() : null;
   const altParts = [
     `--${boundary}`,
     "Content-Type: text/plain; charset=utf-8",
@@ -1054,6 +1054,93 @@ export async function backfillReplies() {
   await saveIntegrationState({ lastSyncedAt: new Date().toISOString() });
 
   return { mode: "live" as const, checked, found };
+}
+
+export type BlastResult = {
+  address: string;
+  status: "sent" | "failed" | "skipped";
+  reason: string;
+};
+
+/**
+ * Sends one hand-written email, unchanged, to a pasted list of addresses.
+ *
+ * Deliberately separate from the lead pipeline: no AI, no draft generation, and it
+ * touches neither the companies table, the threads table, the activity log nor the
+ * daily cap. What it does keep is the jittered gap between sends — the same email
+ * going to 40 inboxes back to back is exactly the pattern that got this account
+ * filtered before.
+ */
+export async function sendBlast(input: {
+  recipients: string[];
+  subject: string;
+  body: string;
+  attachResume?: boolean;
+}) {
+  const subject = input.subject.trim();
+  const body = input.body.trim();
+
+  if (!input.recipients.length) {
+    throw new Error("No valid email addresses were found in the list.");
+  }
+  if (!subject) {
+    throw new Error("A subject is required.");
+  }
+  if (!body) {
+    throw new Error("An email body is required.");
+  }
+
+  if (!isLiveGmailConfigured()) {
+    return {
+      mode: "demo" as const,
+      sentCount: 0,
+      failedCount: 0,
+      results: input.recipients.map<BlastResult>((address) => ({
+        address,
+        status: "skipped",
+        reason: "Demo mode. Connect Gmail to send for real.",
+      })),
+    };
+  }
+
+  const gmail = await getGmailClient();
+  if (!gmail) {
+    throw new Error("Gmail client unavailable. Reconnect Gmail and try again.");
+  }
+
+  const results: BlastResult[] = [];
+
+  for (const address of input.recipients) {
+    if (results.length) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, SEND_GAP_MS + Math.random() * SEND_JITTER_MS),
+      );
+    }
+
+    try {
+      await gmail.users.messages.send({
+        userId: "me",
+        requestBody: {
+          raw: buildGmailMessage(address, subject, body, input.attachResume ?? true),
+        },
+      });
+      results.push({ address, status: "sent", reason: "Sent" });
+    } catch (error) {
+      // One bad address must not abandon the rest of the list.
+      results.push({
+        address,
+        status: "failed",
+        reason: error instanceof Error ? error.message : "Send failed",
+      });
+    }
+  }
+
+  return {
+    mode: "live" as const,
+    sentCount: results.filter((result) => result.status === "sent").length,
+    failedCount: results.filter((result) => result.status === "failed").length,
+    results,
+  };
 }
 
 // Exported for tests only: message assembly has no other seam to check it through.

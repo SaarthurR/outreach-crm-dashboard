@@ -1,4 +1,4 @@
-export type NavView = "unsent" | "sent" | "replies";
+export type NavView = "unsent" | "sent" | "replies" | "blast";
 
 export type ReplyBucket = "needs_reply" | "yes" | "maybe" | "no" | "bounced";
 

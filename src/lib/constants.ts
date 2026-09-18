@@ -16,6 +16,11 @@ export const NAV_ITEMS: Array<{ id: NavView; label: string; helper: string }> = 
     label: "Inbox",
     helper: "Replies and sent threads waiting on a response",
   },
+  {
+    id: "blast",
+    label: "Blast",
+    helper: "Paste a list, paste an email, send it to everyone",
+  },
 ];
 
 export const REPLY_BUCKETS: Array<{ id: ReplyBucket; label: string }> = [

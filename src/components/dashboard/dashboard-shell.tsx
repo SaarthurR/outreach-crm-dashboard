@@ -13,6 +13,7 @@ import {
   LoaderCircle,
   Mail,
   MailCheck,
+  Megaphone,
   MessageSquare,
   PanelsTopLeft,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 
 import { NAV_ITEMS } from "@/lib/constants";
+import { BlastPanel } from "@/components/dashboard/blast-panel";
 import { RepliesTabs } from "@/components/dashboard/replies-tabs";
 import {
   buildThreadMap,
@@ -60,6 +62,7 @@ const navIcons: Record<NavView, typeof Mail> = {
   unsent: MailCheck,
   sent: Send,
   replies: MessageSquare,
+  blast: Megaphone,
 };
 
 const statCards = [
@@ -499,12 +502,15 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
             <nav aria-label="Dashboard sections" className="mt-3 space-y-0.5">
               {NAV_ITEMS.map((item) => {
                 const Icon = navIcons[item.id];
+                // Blast has no queue of its own, so it carries no count badge.
                 const value =
                   item.id === "unsent"
                     ? dashboard.stats.unsentLeads
                     : item.id === "sent"
                       ? dashboard.stats.emailsSent
-                      : replyCount;
+                      : item.id === "replies"
+                        ? replyCount
+                        : null;
                 const selected = activeView === item.id;
 
                 return (
@@ -529,15 +535,17 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
                         <p className="truncate text-[11px] text-[color:var(--muted-ink)]">{item.helper}</p>
                       </div>
                     </div>
-                    <span
-                      className={`rounded-full px-2 py-0.5 font-mono text-[11px] tabular-nums ${
-                        selected
-                          ? "bg-white/80 text-[color:var(--accent-deep)]"
-                          : "bg-[color:var(--panel-muted)] text-[color:var(--muted-ink)]"
-                      }`}
-                    >
-                      {value}
-                    </span>
+                    {value === null ? null : (
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-mono text-[11px] tabular-nums ${
+                          selected
+                            ? "bg-white/80 text-[color:var(--accent-deep)]"
+                            : "bg-[color:var(--panel-muted)] text-[color:var(--muted-ink)]"
+                        }`}
+                      >
+                        {value}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -751,6 +759,9 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
 
         <main className="min-w-0 flex-1">
           <div className="space-y-5">
+            {/* The lead-pipeline toolbar has no meaning on the Blast tab, and a stray
+                click on "Send today" there would fire the wrong campaign. */}
+            {activeView === "blast" ? null : (
             <section className="surface p-5 sm:p-6">
               <h2 className="font-heading text-2xl leading-tight text-[color:var(--ink)] sm:text-3xl">
                 Upload a list. Send and track replies.
@@ -856,6 +867,7 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
                 })}
               </div>
             </section>
+            )}
 
             {activeView === "unsent" ? (
             <section
@@ -968,6 +980,10 @@ export function DashboardShell({ data, canConnectGmail }: DashboardShellProps) {
                 <RepliesTabs onToggleStar={toggleStar} threads={getSentThreads(dashboard.threads)} />
               </div>
             </section>
+            ) : null}
+
+            {activeView === "blast" ? (
+              <BlastPanel connected={dashboard.integration.connected} />
             ) : null}
           </div>
         </main>
